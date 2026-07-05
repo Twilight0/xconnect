@@ -1,135 +1,206 @@
-# mconnect
-mconnect - KDE Connect protocol implementation in Vala/C
+# xconnect
 
-GLib and Gio should be available even on trimmed down systems. Vala is really
-needed only at build time. Json-glib does packet parsing. Libnotify is
-responsible for displaying shell popups.
+KDE Connect protocol implementation in Vala/C with a GTK3/XApp GUI.
 
-# Building
+Allows your Linux desktop to communicate with Android devices via the KDE Connect
+protocol — notifications mirroring, file sharing, clipboard sync, remote input,
+SMS, media control, and more.
 
-Build dependencies (using package names as found in Fedora):
+No KDE dependencies required.
 
-- vala
-- glib2-devel
-- gobject-introspection-devel
-- libgee-devel
-- json-glib
-- gnutls-devel
-- libnotify-devel
-- gtk3-devel
-- at-spi2-core-devel (and at-spi2-atk)
-- meson
-- pkg-config
+## Installation
 
-or see `extra/travis-build` in the source tree for example installation
-commands. Once build deps are in place, run:
+### Arch Linux (PKGBUILD)
 
-    mkdir build
-    cd build
-    meson ..
-    ninja
-    ninja install
-    # to set a custom installation directory run:
-    #   DESTDIR=<somedir> ninja install
+Build and install the package:
 
-# Configuration
-
-**NOTE**: manual configuration file is no longer needed
-
-A sample configuration file is provided in source tree, see
-`mconnect.conf`. It will get installed to `${datadir}/mconnect/`
-(usually corresponding to `/usr/share/mconnect/`) by default. Once
-`mconnect` starts it will pick the default file and make a copy of it
-in user's config directory, specifically `~/.config/mconnect/`.
-
-A device described in it's own group and listed in `main.devices`, has
-to match exactly with incoming identity packets. However, since
-`deviceId` is not known beforehand, neither shown in KDE Connect
-Android application, only `name` and `type` are used for matching.
-
-# Usage
-
-mconnect comes are 2 separate programs, the daemon - `mconnect` and a D-Bus
-client `mconnectctl`.
-
-## The daemon
-
-Start it by running:
-
-```
-$ mconnect -d
+```bash
+makepkg -si
 ```
 
-The daemon starts listens on `0.0.0.0:1714` for incoming UDP packets. Once an
-identity packet (a sort of a handshake) is received, a connection to the
-sender's address will be made. Known devices are cached in
-`~/.cache/mconnect/devices`.
+### Building from source
 
-File sharing to a device requires TCP ports 9970-9975 to be open. Files shared
-from the device are saved to `~/Downloads/mconnect/`.
+#### Dependencies
 
-## The client
+**Arch Linux:**
 
-List discovered devices:
-
-```
-$ mconnectctl list-devices
-Devices:
-    /org/mconnect/device/0    673ac2db27d2a331 - Motorola Moto G Maciek
+```bash
+sudo pacman -S vala meson ninja pkg-config glib2 json-glib libgee libnotify gtk3 libxtst at-spi2-core gnutls python python-gobject xapp
 ```
 
-Accept a device (previously done only through the configuration):
+**Debian/Ubuntu:**
 
-```
-$ mconnectctl allow-device /org/mconnect/device/0
-```
-
-Show device details:
-
-```
-$ mconnectctl show-device /org/mconnect/device/0
-Device 
-  Name: Motorola Moto G Maciek
-  ID: 673ac2db27d2a331
-  Address: 192.168.1.103:1716
-  Type: phone
-  Allowed: true
-  Paired: true
-  Active: true
-  Connected: true
+```bash
+sudo apt install valac meson ninja-build pkg-config libglib2.0-dev libgee-0.8-dev \
+  libjson-glib-dev libnotify-dev libgtk-3-dev libxtst-dev libatspi2.0-dev \
+  libgnutls28-dev python3 python3-gi gir1.2-xapp-1.0
 ```
 
-Share a file/URL/text:
+**Fedora:**
 
+```bash
+sudo dnf install vala meson ninja-build pkgconfig glib2-devel libgee-devel \
+  json-glib-devel libnotify-devel gtk3-devel libXtst-devel at-spi2-core-devel \
+  gnutls-devel python3 python3-gobject xapp
 ```
-$ mconnectctl share-file /org/mconnect/device/0 <path>
-$ mconnectctl share-url /org/mconnect/device/0 www.google.com
-$ mconnectctl share-text /org/mconnect/device/0 'battery horse staple'
+
+#### Build and install
+
+```bash
+meson setup build
+ninja -C build
+sudo ninja -C build install
 ```
 
+To install to a custom prefix:
 
-## DBus API
+```bash
+meson setup build --prefix=/usr --sysconfdir=/etc
+ninja -C build
+DESTDIR=/tmp/xconnect ninja -C build install
+```
 
-The API is not documented. Use D-Feet or busctl to introspect and invoke methods
-manually.
+## Components
 
-## Gnome Shell
+| Binary | Description |
+|--------|-------------|
+| `xconnect` | Daemon — handles protocol, discovery, device communication |
+| `xconnectctl` | CLI client — list devices, share files, send SMS |
+| `xconnect-app` | GUI — system tray icon with device management window |
 
-A Gnome Shell extension is available here:
-https://github.com/andyholmes/gnome-shell-extension-mconnect or via the GNOME
-extensions page: https://extensions.gnome.org/extension/1272/mconnect/
+## Daemon
 
+### Starting
 
-# Firewalls
+```bash
+# Foreground (with debug output)
+xconnect -d
 
-It may be required to either temporarily disable the firewall or open up UDP
-port 1714.
+# Background (silent)
+xconnect
+```
 
-An example service definition for [firewalld](http://www.firewalld.org/) is
-provided in `extra/firewalld/mconnect.xml` directory. The file needs to be
-copied into `/etc/firewalld/services`.
+The daemon listens on UDP port 1716 for incoming device discovery and broadcasts
+its identity to UDP port 1714 every 5 seconds so phones can find it.
 
-# Contributing
+### systemd user service
 
-Please open a Pull Request with your changes. Feel free to ping me (@bboozzoo)
-in description.
+Enable auto-start on login:
+
+```bash
+systemctl --user enable xconnect
+systemctl --user start xconnect
+```
+
+To keep the service running even when you're not logged in:
+
+```bash
+loginctl enable-linger $USER
+```
+
+Check status:
+
+```bash
+systemctl --user status xconnect
+```
+
+View logs:
+
+```bash
+journalctl --user -u xconnect -f
+```
+
+## GUI
+
+Launch the graphical interface:
+
+```bash
+# Show window on start
+xconnect-app
+
+# Start hidden in system tray only
+xconnect-app --hidden
+```
+
+The tray icon provides:
+- **Left-click**: Toggle window visibility
+- **Right-click**: Context menu (Open / Quit)
+
+The window includes:
+- Device sidebar with connection status and battery
+- Device detail page with actions (Ping, Find, Share, SMS, Lock)
+- Notification history from phone
+- MPRIS media control
+- Settings with inline config editor
+
+## CLI client
+
+```bash
+# List devices
+xconnectctl list-devices
+
+# Show device details
+xconnectctl show-device /org/xconnect/device/0
+
+# Share file/URL/text
+xconnectctl share-file /org/xconnect/device/0 /path/to/file
+xconnectctl share-url /org/xconnect/device/0 https://example.com
+xconnectctl share-text /org/xconnect/device/0 "Hello from desktop"
+
+# Send SMS
+xconnectctl send-sms /org/xconnect/device/0 "+1234567890" "Message text"
+
+# Find device (make it ring)
+xconnectctl find-device /org/xconnect/device/0
+
+# Show battery
+xconnectctl show-battery /org/xconnect/device/0
+```
+
+## Configuration
+
+Manual configuration is not required — new devices are auto-allowed on first
+discovery and saved to the config file automatically.
+
+The config file is at `~/.config/xconnect/xconnect.conf`. You can edit it
+via the GUI (Settings → Config Editor) or directly.
+
+### Custom device addresses
+
+To connect to a device by IP (e.g., on a different subnet), add it via
+the GUI settings or add to the config:
+
+```ini
+[main]
+custom_devices=192.168.2.100
+```
+
+## Firewall
+
+The following ports must be open:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 1714 | UDP | Outgoing — broadcast identity to phones |
+| 1716 | UDP | Incoming — receive discovery from phones |
+| 1714 | TCP | Incoming — device connections |
+| 9970-9975 | TCP | Incoming — file transfers |
+
+**ufw:**
+
+```bash
+sudo ufw allow 1714:1716/udp
+sudo ufw allow 1714:1716/tcp
+```
+
+**firewalld:**
+
+```bash
+sudo cp extra/firewalld/xconnect.xml /etc/firewalld/services/
+sudo firewall-cmd --permanent --add-service=xconnect
+sudo firewall-cmd --reload
+```
+
+## License
+
+GPL-2.0

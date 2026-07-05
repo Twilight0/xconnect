@@ -1,4 +1,4 @@
-project('mconnect', 'vala', 'c')
+project('xconnect', 'vala', 'c')
 
 # dependencies
 glib_dep = dependency('glib-2.0')
@@ -23,53 +23,66 @@ add_project_arguments(['--vapidir',
                       language: 'vala')
 
 # binaries
-mconnect_src = [
-  'src/mconnect/main.vala',
-	'src/mconnect/discovery.vala',
-	'src/mconnect/packet.vala',
-	'src/mconnect/device.vala',
-	'src/mconnect/discovereddevice.vala',
-	'src/mconnect/device-proxy.vala',
-	'src/mconnect/devicemanager.vala',
-	'src/mconnect/devicemanager-proxy.vala',
-	'src/mconnect/devicechannel.vala',
-	'src/mconnect/core.vala',
-	'src/mconnect/clipboard.vala',
-	'src/mconnect/packethandlerinterface.vala',
-	'src/mconnect/packethandlerinterface-proxy.vala',
-	'src/mconnect/packethandlers.vala',
-	'src/mconnect/packethandlers-proxy.vala',
-	'src/mconnect/notification.vala',
-	'src/mconnect/battery.vala',
-	'src/mconnect/battery-proxy.vala',
-	'src/mconnect/findmyphone-proxy.vala',
-	'src/mconnect/findmyphone.vala',
-	'src/mconnect/telephony.vala',
-	'src/mconnect/telephony-proxy.vala',
-	'src/mconnect/mousepad.vala',
-	'src/mconnect/runcommand.vala',
-	'src/mconnect/ping.vala',
-	'src/mconnect/ping-proxy.vala',
-	'src/mconnect/config.vala',
-	'src/mconnect/application.vala',
-	'src/mconnect/utils.vala',
-	'src/mconnect/property-proxy.vala',
-	'src/mconnect/share.vala',
-	'src/mconnect/share-proxy.vala',
-	'src/mconnect/mpris.vala',
-	'src/mconnect/mpris-proxies.vala',
-	'src/mconnect/io-job.vala',
-	'src/mconnect/transfer-manager.vala',
-	'src/mconnect/transfer-manager-proxy.vala',
-	'src/mconnect/transfer-interface.vala',
-	'src/mconnect/transfer-proxy.vala',
-	'src/mconnect/transfer-download.vala',
-	'src/mconnect/transfer-upload.vala',
-	'src/mconnect/logging.vala',
+xconnect_src = [
+  'src/xconnect/main.vala',
+	'src/xconnect/discovery.vala',
+	'src/xconnect/packet.vala',
+	'src/xconnect/device.vala',
+	'src/xconnect/discovereddevice.vala',
+	'src/xconnect/device-proxy.vala',
+	'src/xconnect/devicemanager.vala',
+	'src/xconnect/devicemanager-proxy.vala',
+	'src/xconnect/devicechannel.vala',
+	'src/xconnect/core.vala',
+	'src/xconnect/clipboard.vala',
+	'src/xconnect/packethandlerinterface.vala',
+	'src/xconnect/packethandlerinterface-proxy.vala',
+	'src/xconnect/packethandlers.vala',
+	'src/xconnect/packethandlers-proxy.vala',
+	'src/xconnect/notification.vala',
+	'src/xconnect/notification-proxy.vala',
+	'src/xconnect/battery.vala',
+	'src/xconnect/battery-proxy.vala',
+	'src/xconnect/findmyphone-proxy.vala',
+	'src/xconnect/findmyphone.vala',
+	'src/xconnect/telephony.vala',
+	'src/xconnect/telephony-proxy.vala',
+	'src/xconnect/connectivity-report.vala',
+	'src/xconnect/connectivity-report-proxy.vala',
+	'src/xconnect/lockdevice.vala',
+	'src/xconnect/lockdevice-proxy.vala',
+	'src/xconnect/systemvolume.vala',
+	'src/xconnect/systemvolume-proxy.vala',
+	'src/xconnect/presenter.vala',
+	'src/xconnect/presenter-proxy.vala',
+	'src/xconnect/screensaver-inhibit.vala',
+	'src/xconnect/virtual-monitor.vala',
+	'src/xconnect/virtual-monitor-proxy.vala',
+	'src/xconnect/mousepad-proxy.vala',
+	'src/xconnect/mousepad.vala',
+	'src/xconnect/runcommand.vala',
+	'src/xconnect/ping.vala',
+	'src/xconnect/ping-proxy.vala',
+	'src/xconnect/config.vala',
+	'src/xconnect/application.vala',
+	'src/xconnect/utils.vala',
+	'src/xconnect/property-proxy.vala',
+	'src/xconnect/share.vala',
+	'src/xconnect/share-proxy.vala',
+	'src/xconnect/mpris.vala',
+	'src/xconnect/mpris-proxies.vala',
+	'src/xconnect/io-job.vala',
+	'src/xconnect/transfer-manager.vala',
+	'src/xconnect/transfer-manager-proxy.vala',
+	'src/xconnect/transfer-interface.vala',
+	'src/xconnect/transfer-proxy.vala',
+	'src/xconnect/transfer-download.vala',
+	'src/xconnect/transfer-upload.vala',
+	'src/xconnect/logging.vala',
 	'src/crypt/certificate.vala',
 ]
 
-mconnect_prog = executable('mconnect', mconnect_src,
+xconnect_prog = executable('xconnect', xconnect_src,
                            dependencies : [glib_dep, gobject_dep,
                                            gio_dep, gio_unix_dep,
                                            json_glib_dep, gee_dep,
@@ -80,16 +93,16 @@ mconnect_prog = executable('mconnect', mconnect_src,
                                            posix_dep, gtk_dep],
                            install: true)
 
-mconnectctl_src = [
-  'src/mconnectctl/main.vala',
-  'src/mconnectctl/device-manager-iface.vala',
-  'src/mconnectctl/device-iface.vala',
-  'src/mconnectctl/battery-iface.vala',
-  'src/mconnectctl/share-iface.vala',
-  'src/mconnectctl/findmyphone-iface.vala',
-  'src/mconnectctl/telephony-iface.vala',
+xconnectctl_src = [
+  'src/xconnectctl/main.vala',
+  'src/xconnectctl/device-manager-iface.vala',
+  'src/xconnectctl/device-iface.vala',
+  'src/xconnectctl/battery-iface.vala',
+  'src/xconnectctl/share-iface.vala',
+  'src/xconnectctl/findmyphone-iface.vala',
+  'src/xconnectctl/telephony-iface.vala',
 ]
-executable('mconnectctl', mconnectctl_src,
+executable('xconnectctl', xconnectctl_src,
            dependencies : [glib_dep, gobject_dep,
                            gio_dep, gio_unix_dep],
            install: true)
@@ -110,8 +123,8 @@ test('mconn-crypt', test_mconn_crypt)
 
 test_mconn_utils_src = [
   'test/mconn-utils-test.vala',
-  'src/mconnect/utils.vala',
-  'src/mconnect/logging.vala',
+  'src/xconnect/utils.vala',
+  'src/xconnect/logging.vala',
 ]
 test_mconn_utils = executable('test-mconn-utils', test_mconn_utils_src,
                               dependencies: [
@@ -130,18 +143,27 @@ conf = configuration_data()
 conf.set('bindir',
          join_paths(get_option('prefix'), get_option('bindir')))
 
-configure_file(output: 'mconnect.desktop',
-               input: 'mconnect.desktop.in',
+configure_file(output: 'xconnect.desktop',
+               input: 'xconnect.desktop.in',
                configuration: conf)
 
-install_data(join_paths(meson.current_build_dir(), 'mconnect.desktop'),
-             install_dir: applicationsdir,
-             install_mode: 'rw-r--r--')
+install_data(join_paths(meson.current_build_dir(), 'xconnect.desktop'),
+              install_dir: applicationsdir,
+              install_mode: 'rw-r--r--',
+              install_tag: 'data')
 
-mconnectdatadir = join_paths(get_option('datadir'),
-                             'mconnect')
-install_data('mconnect.conf',
-             install_dir: mconnectdatadir,
+xconnectdatadir = join_paths(get_option('datadir'),
+                             'xconnect')
+install_data('xconnect.conf',
+              install_dir: xconnectdatadir,
+              install_mode: 'rw-r--r--',
+              install_tag: 'data')
+
+
+# systemd user service
+systemd_user_dir = join_paths(get_option('prefix'), 'lib', 'systemd', 'user')
+install_data('extra/xconnect.service',
+             install_dir: systemd_user_dir,
              install_mode: 'rw-r--r--')
 
 # other targets
@@ -153,4 +175,4 @@ gdb_script = configure_file(output: 'gdb-script',
                             configuration: gdb_conf)
 run_target('run-gdb',
            command: ['gdb', '-x', join_paths(meson.build_root(), 'gdb-script')],
-           depends: [mconnect_prog])
+           depends: [xconnect_prog])

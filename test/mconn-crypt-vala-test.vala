@@ -1,4 +1,4 @@
-using Mconn;
+using Xconn;
 
 void test_generate () {
     string key_path = "/tmp/test-key-vala.pem";

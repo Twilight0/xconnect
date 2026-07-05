@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Xconnect
+Comment=KDE Connect protocol client for non-KDE desktops
+Exec=/usr/bin/xconnect-app
+Icon=xconnect
+Terminal=false
+Categories=GTK;Utility;Network;
+Keywords=phone;connect;kde;xconnect;

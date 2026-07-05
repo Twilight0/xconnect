@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Mobile Connect
-Exec=@bindir@/mconnect
-Terminal=false
-Icon=phone
-Categories=Network;
-
-

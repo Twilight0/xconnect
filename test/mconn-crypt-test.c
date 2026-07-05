@@ -25,7 +25,7 @@ static void test_simple(void)
 	/* we made sure that file is removed */
 	g_assert_false(g_file_test("/tmp/test.key", G_FILE_TEST_EXISTS));
 
-	MconnCrypt *cr = mconn_crypt_new_for_key_path("/tmp/test.key");
+	XconnCrypt *cr = mconn_crypt_new_for_key_path("/tmp/test.key");
 	g_assert_nonnull(cr);
 	g_assert_true(g_file_test("/tmp/test.key", G_FILE_TEST_EXISTS));
 

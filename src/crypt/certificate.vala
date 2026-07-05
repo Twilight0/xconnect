@@ -16,7 +16,7 @@
  * Maciek Borzecki <maciek.borzecki (at] gmail.com>
  */
 
-namespace Mconn {
+namespace Xconn {
 
     namespace Crypt {
 
@@ -47,11 +47,13 @@ namespace Mconn {
                                                            string common_name) {
 
             var cert = GnuTLS.X509.Certificate.create ();
-            var start_time = new DateTime.now_local ();
+            var start_time = new DateTime.now_local ().add_days (-1);
             var end_time = start_time.add_years (10);
 
             cert.set_key (key);
-            cert.set_version (1);
+            cert.set_version (3);
+            cert.set_ca_status (1);
+            cert.set_key_usage (GnuTLS.KeyUsage.DIGITAL_SIGNATURE | GnuTLS.KeyUsage.KEY_ENCIPHERMENT | GnuTLS.KeyUsage.KEY_CERT_SIGN);
             cert.set_activation_time ((time_t) start_time.to_unix ());
             cert.set_expiration_time ((time_t) end_time.to_unix ());
             uint32 serial = Posix.htonl (10);
@@ -60,11 +62,11 @@ namespace Mconn {
             dn_setting[] dn = {
                 dn_setting () {
                     oid = GnuTLS.OID.X520_ORGANIZATION_NAME,
-                    name = "mconnect"
+                    name = "KDE"
                 },
                 dn_setting () {
                     oid = GnuTLS.OID.X520_ORGANIZATIONAL_UNIT_NAME,
-                    name = "mconnect"
+                    name = "KdeConnect"
                 },
                 dn_setting () {
                     oid = GnuTLS.OID.X520_COMMON_NAME,

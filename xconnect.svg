@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg_grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4db6ac" />
+      <stop offset="100%" stop-color="#00695c" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  
+  <!-- Flat Circle Background -->
+  <circle cx="64" cy="64" r="56" fill="url(#bg_grad)" filter="url(#shadow)"/>
+  
+  <!-- Laptop Base & Screen -->
+  <rect x="24" y="44" width="56" height="36" rx="4" fill="#ffffff" opacity="0.9" />
+  <rect x="28" y="48" width="48" height="28" fill="#004d40" opacity="0.6" />
+  <!-- Laptop Keyboard Base -->
+  <path d="M 16 80 L 88 80 L 92 86 L 12 86 Z" fill="#ffffff" opacity="0.95" />
+  
+  <!-- Smartphone (overlapping laptop) -->
+  <rect x="76" y="52" width="28" height="42" rx="4" fill="#ffffff" opacity="1" filter="url(#shadow)" />
+  <rect x="80" y="58" width="20" height="28" fill="#004d40" opacity="0.75" />
+  <!-- Smartphone button -->
+  <circle cx="90" cy="89" r="2.5" fill="#00796b" />
+  
+  <!-- Wireless Connection Waves -->
+  <!-- Outer Wave -->
+  <path d="M 44 32 Q 64 16 84 32" stroke="#ffffff" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8" />
+  <!-- Inner Wave -->
+  <path d="M 52 40 Q 64 28 76 40" stroke="#ffffff" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.5" />
+</svg>

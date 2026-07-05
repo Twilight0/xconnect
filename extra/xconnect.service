@@ -1,0 +1,12 @@
+[Unit]
+Description=xconnect - KDE Connect protocol daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/xconnect
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
