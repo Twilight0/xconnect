@@ -27,6 +27,7 @@ class Device : Object {
     public const uint PAIR_TIMEOUT = 60;
 
     public signal void paired (bool pair);
+    public signal void pair_requested (string fingerprint);
     public signal void connected ();
     public signal void disconnected ();
     public signal void message (Packet pkt);
@@ -102,9 +103,38 @@ class Device : Object {
         get; private set; default = "";
     }
 
+    /**
+     * verification_key:
+     *
+     * Pairing verification key, matching KDE Connect's algorithm
+     * (PairingHandler::verificationKey() in kdeconnect-kde): SHA256 of both
+     * devices' public keys (larger byte-array first), mixed with the
+     * pairing timestamp for protocol version >= 8, first 8 hex chars,
+     * uppercase. Both sides compute the same code because the timestamp
+     * used is the one carried in the original pairing request packet.
+     */
+    public string verification_key {
+        owned get {
+            if (this.certificate == null) {
+                return "";
+            }
+            var core = Core.instance ();
+            int64 ts = (this.protocol_version >= 8) ? this._pairing_timestamp : 0;
+            var key = Crypt.verification_key (core.certificate.certificate_pem,
+                                              this.certificate.certificate_pem,
+                                              ts);
+            debug ("verification_key: protocol_version=%u, timestamp=%s, key=%s",
+                   this.protocol_version, ts.to_string (), key);
+            return key;
+        }
+    }
+
     // set to true if pair request was sent
     private bool _pair_in_progress = false;
     private uint _pair_timeout_source = 0;
+    // timestamp shared by both peers for the current pairing exchange,
+    // used as part of the verification_key computation (protocol >= 8)
+    private int64 _pairing_timestamp = 0;
 
     private DeviceChannel _channel = null;
 
@@ -298,9 +328,18 @@ class Device : Object {
                 // pairing timeout
                 _pair_timeout_source = Timeout.add_seconds (PAIR_TIMEOUT,
                                                             this.pair_timeout);
+                // fresh pairing request: generate and remember the timestamp
+                // so verification_key() can be computed consistently on both
+                // ends (the peer will adopt this same timestamp value)
+                this._pairing_timestamp = GLib.get_real_time () / 1000000;
+            } else if (this._pairing_timestamp == 0) {
+                // sending a confirmation without ever having a timestamp
+                // (shouldn't normally happen) - fall back to current time
+                this._pairing_timestamp = GLib.get_real_time () / 1000000;
             }
-            // send request
-            yield _channel.send (Packet.new_pair ());
+            // send request, reusing the shared pairing timestamp so that
+            // both peers agree on the same verification_key input
+            yield _channel.send (Packet.new_pair (true, this._pairing_timestamp));
         }
     }
 
@@ -318,7 +357,8 @@ class Device : Object {
                 warning ("failed to send unpair request: %s", e.message);
             }
         }
-        // Update local state
+
+        // Update local state and notify subscribers (which saves the cache and deactivates the device link)
         this.is_paired = false;
         paired (false);
 
@@ -326,16 +366,6 @@ class Device : Object {
         var core = Core.instance ();
         string group_name = this.device_name.replace (" ", "-").down ();
         core.config.remove_device (group_name);
-
-        // Delete device cache file to avoid stale entries on reload
-        try {
-            var cache_file = File.new_for_path (Path.build_filename (Core.get_cache_dir (), "devices"));
-            if (cache_file.query_exists ()) {
-                cache_file.delete (null);
-            }
-        } catch (Error e) {
-            warning ("failed to delete device cache file: %s", e.message);
-        }
     }
 
     private bool pair_timeout () {
@@ -353,18 +383,45 @@ class Device : Object {
     /**
      * maybe_pair:
      *
-     * Trigger pairing or call handle_pair() if already paired.
+     * Called after TLS channel is established. If already paired, just notify
+     * local subscribers so the connection is accepted. Do NOT send a pair=true
+     * packet — KDE Connect protocol only exchanges pair packets when initiating
+     * or breaking a pairing, not on every reconnect.
+     *
+     * If the remote side lost its pairing state it will send pair=true to us;
+     * handle_pair_packet() will respond with pair=true automatically.
      */
     public void maybe_pair () {
         if (is_paired == false) {
-            if (_pair_in_progress == false)
-                this.pair.begin ();
+            // Not paired: wait for user or peer to initiate pairing.
+            debug ("device is not paired, waiting for user or peer to initiate pairing");
         } else {
-            // Already paired - send confirmation to phone so it knows we accept,
-            // then notify local subscribers
-            GLib.message ("device already paired, sending pair confirmation");
-            this.pair.begin (false);
-            handle_pair (true);
+            // Already paired: tell local subscribers (manager, D-Bus proxy, etc.)
+            // without sending any packet to the remote device.
+            GLib.message ("device already paired, accepting incoming packets");
+            paired (true);
+        }
+    }
+
+    public async void accept_pair () {
+        debug ("accept_pair called");
+        this.is_paired = true;
+        paired (true);
+        try {
+            yield this.pair (false);
+        } catch (Error e) {
+            warning ("failed to send pair accept: %s", e.message);
+        }
+    }
+
+    public async void reject_pair () {
+        debug ("reject_pair called");
+        this.is_paired = false;
+        paired (false);
+        try {
+            yield _channel.send (Packet.new_pair (false));
+        } catch (Error e) {
+            warning ("failed to send pair reject: %s", e.message);
         }
     }
 
@@ -381,12 +438,8 @@ class Device : Object {
         }
 
         _channel = new DeviceChannel (this.host, this.tcp_port);
-        _channel.disconnected.connect ((c) => {
-            this.handle_disconnect ();
-        });
-        _channel.packet_received.connect ((c, pkt) => {
-            this.packet_received (pkt);
-        });
+        _channel.disconnected.connect (this.on_channel_disconnected);
+        _channel.packet_received.connect (this.on_channel_packet_received);
         _channel.open.begin ((c, res) => {
             this.channel_openend (_channel.open.end (res));
         });
@@ -395,17 +448,16 @@ class Device : Object {
     public void activate_with_channel (DeviceChannel channel) {
         GLib.message ("activate_with_channel: setting up channel for device %s", this.device_name);
         if (this._channel != null) {
-            GLib.message ("activate_with_channel: closing existing channel first");
-            close_and_cleanup ();
+            GLib.message ("activate_with_channel: closing existing channel first (preserving pairing state)");
+            this._channel.disconnected.disconnect (this.on_channel_disconnected);
+            this._channel.packet_received.disconnect (this.on_channel_packet_received);
+            this._channel.close ();
+            this._channel = null;
         }
 
         this._channel = channel;
-        this._channel.disconnected.connect ((c) => {
-            this.handle_disconnect ();
-        });
-        this._channel.packet_received.connect ((c, pkt) => {
-            this.packet_received (pkt);
-        });
+        this._channel.disconnected.connect (this.on_channel_disconnected);
+        this._channel.packet_received.connect (this.on_channel_packet_received);
 
         // We already did greet (sent identity) and received identity,
         // so we can directly initiate secure incoming connection.
@@ -496,6 +548,16 @@ class Device : Object {
 
         bool pair = pkt.body.get_boolean_member ("pair");
 
+        // Only adopt the peer's timestamp when this is a fresh incoming
+        // request (i.e. we did not initiate pairing ourselves). If we did
+        // initiate (_pair_in_progress == true), this packet is the peer's
+        // response to our request, so we keep our own timestamp - this
+        // matches kdeconnect-kde's PairingHandler::packetReceived() logic
+        // and ensures both sides hash the same timestamp value.
+        if (pair && !_pair_in_progress && pkt.body.has_member ("timestamp")) {
+            this._pairing_timestamp = pkt.body.get_int_member ("timestamp");
+        }
+
         handle_pair (pair);
     }
 
@@ -532,18 +594,27 @@ class Device : Object {
                 // unpair from device
                 this.is_paired = false;
             } else {
-                // split brain, pair was not initiated by us, but we were called
-                // with information that we are paired, assume we are paired and
-                // send a pair packet, but not expecting a response this time
-
-                this.pair.begin (false);
-
-                this.is_paired = true;
+                if (this.is_paired) {
+                    debug ("already paired, sending pair confirmation back");
+                    this.pair.begin (false);
+                } else {
+                    debug ("incoming unsolicited pairing request, emitting pair_requested signal");
+                    pair_requested (this.verification_key);
+                    return;
+                }
             }
         }
 
         // emit signal
         paired (is_paired);
+    }
+
+    private void on_channel_disconnected (DeviceChannel channel) {
+        this.handle_disconnect ();
+    }
+
+    private void on_channel_packet_received (DeviceChannel channel, Packet pkt) {
+        this.packet_received (pkt);
     }
 
     /**
@@ -571,7 +642,11 @@ class Device : Object {
      */
     private void channel_closed_cleanup () {
         debug ("close cleanup");
-        _channel = null;
+        if (_channel != null) {
+            _channel.disconnected.disconnect (this.on_channel_disconnected);
+            _channel.packet_received.disconnect (this.on_channel_packet_received);
+            _channel = null;
+        }
 
         this.is_active = false;
 
@@ -706,16 +781,17 @@ class Device : Object {
     private void update_certificate (TlsCertificate cert) {
         this.certificate = cert;
 
-        // prepare fingerprint
+        // prepare fingerprint as uppercase colon-separated hex bytes (SHA256)
         var fingerprint = Crypt.fingerprint_certificate (cert.certificate_pem);
-        var sb = new StringBuilder.sized (fingerprint.length * 2
-                                          + "sha1:".length);
-        sb.append ("sha1:");
+        var sb = new StringBuilder.sized (fingerprint.length * 3);
         foreach (var b in fingerprint) {
+            if (sb.len > 0) {
+                sb.append_c (':');
+            }
             sb.append_printf ("%02x", b);
         }
 
-        this.certificate_fingerprint = sb.str;
+        this.certificate_fingerprint = sb.str.up ();
     }
 
     public void send (Packet pkt) {

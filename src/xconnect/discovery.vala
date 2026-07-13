@@ -20,6 +20,9 @@ class Discovery : GLib.Object {
     private Socket socket = null;
     private uint broadcast_source = 0;
 
+    public delegate bool CheckShouldBroadcast ();
+    public CheckShouldBroadcast should_broadcast { get; set; default = null; }
+
     public signal void device_found (DiscoveredDevice dev);
 
     public Discovery () {
@@ -71,7 +74,9 @@ class Discovery : GLib.Object {
         // Broadcast identity immediately and then periodically
         broadcast_identity ();
         this.broadcast_source = Timeout.add_seconds (5, () => {
-            broadcast_identity ();
+            if (this.should_broadcast == null || this.should_broadcast ()) {
+                broadcast_identity ();
+            }
             return true;
         });
     }

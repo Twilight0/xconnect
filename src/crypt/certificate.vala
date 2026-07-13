@@ -173,18 +173,131 @@ namespace Xconn {
          * @param certificate_pem PEM encoded certificate
          * @return SHA1 fingerprint as bytes
          */
-        public uint8[] fingerprint_certificate (string certificate_pem) {
+         public uint8[] fingerprint_certificate (string certificate_pem) {
+             var cert = cert_from_pem (certificate_pem);
+
+             // TOOD: make digest configurable, for now assume it's SHA1
+             var data = new uint8[20];
+             size_t sz = data.length;
+             var res = cert.get_fingerprint (GnuTLS.DigestAlgorithm.SHA1,
+                                             data, ref sz);
+             assert (res == GnuTLS.ErrorCode.SUCCESS);
+             assert (sz == data.length);
+
+             return data;
+         }
+
+        /**
+         * sha256_string:
+         * Compute SHA256 hash of a string
+         *
+         * @param input input string
+         * @return SHA256 hash as hex string (uppercase)
+         */
+        public string sha256_string (string input) {
+            var checksum = new GLib.Checksum (GLib.ChecksumType.SHA256);
+            checksum.update ((uint8[]) input, input.length);
+            uint8[] digest = new uint8[32];
+            size_t digest_len = 32;
+            checksum.get_digest (digest, ref digest_len);
+
+            var sb = new StringBuilder.sized (64);
+            foreach (var b in digest) {
+                sb.append_printf ("%02x", b);
+            }
+            return sb.str;
+        }
+
+        /**
+         * extract_public_key_der:
+         *
+         * Extract the DER-encoded SubjectPublicKeyInfo from a PEM certificate.
+         * This matches what Qt's QSslCertificate::publicKey().toDer() returns,
+         * which is what KDE Connect's desktop app uses to compute the pairing
+         * verification key.
+         *
+         * @param certificate_pem PEM encoded certificate
+         * @return DER encoded public key bytes
+         */
+        public uint8[] extract_public_key_der (string certificate_pem) {
             var cert = cert_from_pem (certificate_pem);
 
-            // TOOD: make digest configurable, for now assume it's SHA1
-            var data = new uint8[20];
-            size_t sz = data.length;
-            var res = cert.get_fingerprint (GnuTLS.DigestAlgorithm.SHA1,
-                                            data, ref sz);
+            var pubkey = GnuTLS.Pubkey.create ();
+            var res = pubkey.import_x509 (cert, 0);
             assert (res == GnuTLS.ErrorCode.SUCCESS);
-            assert (sz == data.length);
 
-            return data;
+            GnuTLS.Datum der_data;
+            res = pubkey.export2 (GnuTLS.X509.CertificateFormat.DER, out der_data);
+            assert (res == GnuTLS.ErrorCode.SUCCESS);
+
+            uint8[] result = new uint8[der_data.size];
+            GLib.Memory.copy (result, der_data.data, der_data.size);
+
+            GnuTLS.free (der_data.data);
+
+            return result;
+        }
+
+        /**
+         * compare_bytes:
+         *
+         * Lexicographically compare two byte arrays (like memcmp / QByteArray::operator<).
+         *
+         * @return negative if a < b, 0 if equal, positive if a > b
+         */
+        public int compare_bytes (uint8[] a, uint8[] b) {
+            size_t min_len = a.length < b.length ? a.length : b.length;
+            for (size_t i = 0; i < min_len; i++) {
+                if (a[i] != b[i]) {
+                    return (int) a[i] - (int) b[i];
+                }
+            }
+            return a.length - b.length;
+        }
+
+        /**
+         * verification_key:
+         *
+         * Compute the KDE Connect pairing verification key: SHA256 hash of the
+         * two devices' public keys (larger byte-array first), optionally mixed
+         * with the pairing timestamp (protocol version >= 8), truncated to the
+         * first 8 hex characters, uppercased. This matches
+         * PairingHandler::verificationKey() in kdeconnect-kde.
+         *
+         * @param local_cert_pem local certificate PEM
+         * @param remote_cert_pem remote certificate PEM
+         * @param pairing_timestamp pairing timestamp (seconds since epoch), or 0 to skip
+         * @return 8 character uppercase hex verification key
+         */
+        public string verification_key (string local_cert_pem, string remote_cert_pem,
+                                        int64 pairing_timestamp) {
+            var a = extract_public_key_der (local_cert_pem);
+            var b = extract_public_key_der (remote_cert_pem);
+
+            if (compare_bytes (a, b) < 0) {
+                var tmp = a;
+                a = b;
+                b = tmp;
+            }
+
+            var checksum = new GLib.Checksum (GLib.ChecksumType.SHA256);
+            checksum.update (a, a.length);
+            checksum.update (b, b.length);
+
+            if (pairing_timestamp != 0) {
+                var ts_str = pairing_timestamp.to_string ();
+                checksum.update (ts_str.data, ts_str.data.length);
+            }
+
+            uint8[] digest = new uint8[32];
+            size_t digest_len = 32;
+            checksum.get_digest (digest, ref digest_len);
+
+            var sb = new StringBuilder.sized (8);
+            for (int i = 0; i < 4; i++) {
+                sb.append_printf ("%02X", digest[i]);
+            }
+            return sb.str;
         }
     }
 }

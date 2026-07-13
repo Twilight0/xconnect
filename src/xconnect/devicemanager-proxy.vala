@@ -29,6 +29,14 @@ class DeviceManagerDBusProxy : Object {
         }
     }
 
+    public string uuid {
+        owned get {
+            return Core.instance ().config.get_uuid ();
+        }
+        private set {
+        }
+    }
+
     public signal void device_added (string path);
 
     public signal void device_removed (string path);
@@ -163,18 +171,27 @@ class DeviceManagerDBusProxy : Object {
         this.manager.add_custom_device (address);
         custom_devices_changed (this.manager.custom_device_list);
     }
-
-    /**
-     * remove_custom_device:
-     * @address: IP address or hostname to remove
-     *
-     * Remove a custom device address
-     */
     public void remove_custom_device (string address) throws Error {
         this.manager.remove_custom_device (address);
         custom_devices_changed (this.manager.custom_device_list);
     }
 
+    public string get_downloads_directory () throws Error {
+        var core = Core.instance ();
+        string custom_dir = core.config.get_downloads_dir ();
+        if (custom_dir != null && custom_dir != "") {
+            return custom_dir;
+        }
+        var downloaddir = Environment.get_user_special_dir (UserDirectory.DOWNLOAD);
+        if (downloaddir == null) {
+            downloaddir = Path.build_filename(Environment.get_home_dir(), "Downloads");
+        }
+        return Path.build_filename (downloaddir, "xconnect");
+    }
+
+    public void set_downloads_directory (string directory) throws Error {
+        Core.instance ().config.set_downloads_dir (directory);
+    }
     private void add_device (Device dev) {
         var path = make_device_path ();
         var device_proxy = new DeviceDBusProxy.for_device_with_path (dev,

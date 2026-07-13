@@ -68,14 +68,16 @@ namespace Xconn {
             if (core == null)
                 error ("cannot initialize core");
 
-            // Set up a file monitor to watch the config file for external changes
+            // Set up a debounced file monitor to watch the config file for external changes.
+            // rate_limit=2000ms batches rapid filesystem events so save() doesn't trigger
+            // an instant reload loop.
             try {
                 var config_file = File.new_for_path (core.config.path);
                 var monitor = config_file.monitor (FileMonitorFlags.NONE);
+                monitor.rate_limit = 2000;
                 monitor.changed.connect (() => {
-                    // Reload configuration and notify manager of changes
                     core.config.reload ();
-                    manager.reload_config (); // will implement method to handle updates
+                    manager.reload_config ();
                 });
             } catch (Error e) {
                 warning ("Failed to set up config file monitor: %s", e.message);
@@ -91,6 +93,12 @@ namespace Xconn {
             discovery.device_found.connect ((disc, discdev) => {
                 manager.handle_discovered_device (discdev);
             });
+
+            discovery.should_broadcast = () => {
+                // If there are active devices, do not broadcast periodically to prevent
+                // mobile devices from repeatedly reconnecting and resetting the active connection.
+                return !manager.has_active_devices ();
+            };
 
             try {
                 discovery.listen ();

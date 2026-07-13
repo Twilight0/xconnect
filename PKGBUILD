@@ -1,7 +1,7 @@
 # Maintainer: Twilight0 <twilight@freemail.gr>
 pkgname=xconnect-app
-pkgver=2.0
-pkgrel=29
+pkgver=2.0.1
+pkgrel=1
 pkgdesc="KDE Connect protocol implementation in Vala/C with GTK3/XApp GUI"
 arch=('x86_64')
 url="https://github.com/Twilight0/xconnect"

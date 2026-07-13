@@ -28,7 +28,7 @@ from dbus_client import MConnectDBus
 
 APP_ID = "org.xconnect.gui"
 APP_NAME = "xconnect"
-APP_VERSION = "2.0"
+APP_VERSION = "2.0.1"
 SETTINGS_DIR = os.path.expanduser("~/.config/xconnect")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "gui.conf")
 ICON_DIR = "/usr/share/xconnect/gui/icons"
@@ -136,6 +136,8 @@ class MConnectApp(Gtk.Application):
         self.dbus.set_device_added_callback(self._on_device_added)
         self.dbus.set_device_removed_callback(self._on_device_removed)
         self.dbus.set_notification_received_callback(self._on_phone_notification)
+        self.dbus.set_pair_requested_callback(self._on_pair_requested)
+        self.dbus.set_call_received_callback(self._on_call_received)
         self.dbus.set_property_changed_callback(self._on_property_changed)
         self.dbus.set_transfer_callback(self._on_transfer_event)
 
@@ -331,6 +333,47 @@ class MConnectApp(Gtk.Application):
         self.notif_log.add(app, title, f"[{name}]")
         GLib.idle_add(self._show_notification, f"{app}: {title}",
                       f"From {name}", "phone")
+
+    def _on_pair_requested(self, path, fingerprint):
+        """Handle incoming pairing request signal."""
+        GLib.idle_add(self._show_pair_dialog, path, fingerprint)
+
+    def _show_pair_dialog(self, path, fingerprint):
+        name = self.store.devices.get(path, {}).get("name", "Device")
+        # `fingerprint` is the daemon-computed verification key (matches
+        # KDE Connect's algorithm), already an 8-char uppercase hex string.
+        verification_key = fingerprint or self.dbus.get_verification_key(path)
+
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=Gtk.DialogFlags.MODAL,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text=f"Pairing Request from {name}"
+        )
+        dialog.add_buttons(
+            "Reject", Gtk.ResponseType.REJECT,
+            "Accept", Gtk.ResponseType.ACCEPT
+        )
+        dialog.format_secondary_text(
+            f"Verification key:\n{verification_key}\n\n"
+            f"Please verify that this matches the key shown on your phone."
+        )
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.ACCEPT:
+            self.dbus.accept_pair(path)
+            self._toast(f"Paired with {name}")
+        else:
+            self.dbus.reject_pair(path)
+            self._toast(f"Rejected pairing request from {name}")
+
+    def _on_call_received(self, path, summary, info):
+        """Handle call received signal from phone."""
+        name = self.store.devices.get(path, {}).get("name", "Phone")
+        self.notif_log.add(summary, info, f"[{name}]")
+        GLib.idle_add(self._show_notification, summary, f"{info} (From {name})", "phone")
 
     def _on_property_changed(self, path, props):
         """Handle D-Bus property changes on a device."""
@@ -644,7 +687,7 @@ class MConnectApp(Gtk.Application):
 
     def _pair_device(self, path):
         """Send pairing request to device via D-Bus."""
-        if self.dbus.allow_device(path):
+        if self.dbus.pair(path):
             self._toast("Pairing request sent")
         else:
             self._toast("Pairing failed")
@@ -717,6 +760,7 @@ class MConnectApp(Gtk.Application):
         hint.set_line_wrap(True)
         hint.set_justify(Gtk.Justification.CENTER)
         hint.set_selectable(True)
+        hint.set_can_focus(False)
         box.pack_start(hint, False, False, 0)
 
         refresh_btn = Gtk.Button.new_with_label("Refresh")
@@ -780,26 +824,28 @@ class MConnectApp(Gtk.Application):
         action_grid.set_column_homogeneous(True)
 
         actions = [
-            ("Ping", "dialog-information-symbolic", self._action_ping),
-            ("Find Phone", "edit-find-symbolic", self._action_find),
-            ("Send File", "document-send-symbolic", self._action_send_file),
-            ("Send URL", "web-browser-symbolic", self._action_send_url),
-            ("Send Text", "accessories-text-editor-symbolic",
+            ("ping", "Ping", "dialog-information-symbolic", self._action_ping),
+            ("find", "Find Phone", "edit-find-symbolic", self._action_find),
+            ("send_file", "Send File", "document-send-symbolic", self._action_send_file),
+            ("send_url", "Send URL", "web-browser-symbolic", self._action_send_url),
+            ("send_text", "Send Text", "accessories-text-editor-symbolic",
              self._action_send_text),
-            ("Send SMS", "mail-send-symbolic", self._action_send_sms),
-            ("Lock Device", "system-lock-screen-symbolic",
+            ("send_sms", "Send SMS", "mail-send-symbolic", self._action_send_sms),
+            ("lock", "Lock Device", "system-lock-screen-symbolic",
              self._action_lock),
-            ("Unpair", "dialog-error-symbolic", self._action_unpair),
-            ("Remove", "edit-delete-symbolic", self._action_remove),
+            ("pair_unpair", "Unpair", "dialog-error-symbolic", self._action_pair_unpair),
+            ("remove", "Remove", "edit-delete-symbolic", self._action_remove),
         ]
 
-        for i, (label, icon_name, callback) in enumerate(actions):
+        self.action_buttons = {}
+        for i, (key, label, icon_name, callback) in enumerate(actions):
             btn = Gtk.Button.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON)
             btn.set_label(label)
             btn.set_always_show_image(True)
             btn.set_relief(Gtk.ReliefStyle.NONE)
             btn.connect("clicked", lambda w, cb=callback: cb())
             action_grid.attach(btn, i % 4, i // 4, 1, 1)
+            self.action_buttons[key] = btn
 
         self.detail_box.pack_start(action_grid, False, False, 0)
 
@@ -907,6 +953,25 @@ class MConnectApp(Gtk.Application):
         else:
             self.conn_card._value_label.set_markup(
                 '<span size="large" color="#9e9e9e">N/A</span>')
+
+        # Update action buttons sensitivity, icons, and labels dynamically
+        if hasattr(self, "action_buttons"):
+            for key, btn in self.action_buttons.items():
+                if key in ["ping", "find", "send_file", "send_url", "send_text", "send_sms", "lock"]:
+                    btn.set_sensitive(is_active and is_paired)
+                elif key == "pair_unpair":
+                    if is_paired:
+                        btn.set_label("Unpair")
+                        img = Gtk.Image.new_from_icon_name("dialog-error-symbolic", Gtk.IconSize.BUTTON)
+                        btn.set_image(img)
+                        btn.set_sensitive(True)  # Can unpair anytime
+                    else:
+                        btn.set_label("Pair")
+                        img = Gtk.Image.new_from_icon_name("emblem-shared-symbolic", Gtk.IconSize.BUTTON)
+                        btn.set_image(img)
+                        btn.set_sensitive(is_active)  # Can only pair when active
+                elif key == "remove":
+                    btn.set_sensitive(True)
 
     # ── Notification Page ────────────────────────────────────────────
 
@@ -1429,11 +1494,47 @@ class MConnectApp(Gtk.Application):
         path, info = self._get_selected()
         if path:
             name = info.get("name", "device")
-            self.dbus.disallow_device(path)
+            self.dbus.remove_device(path)
             self.store.remove(path)
             self._rebuild_device_list()
             self.content_stack.set_visible_child_name("welcome")
             self._toast(f"Unpaired from {name}")
+
+    def _action_pair_unpair(self):
+        path, info = self._get_selected()
+        if path:
+            is_paired = info.get("paired")
+            if is_paired:
+                self._action_unpair()
+            else:
+                self._action_pair()
+
+    def _action_pair(self):
+        path, info = self._get_selected()
+        if path:
+            name = info.get("name", "device")
+
+            if self.dbus.pair(path):
+                # Read back the verification key after pair() has set the
+                # pairing timestamp on the daemon side, so it matches what
+                # the phone computes for this same request.
+                verification_key = self.dbus.get_verification_key(path)
+                dialog = Gtk.MessageDialog(
+                    transient_for=self.window,
+                    flags=Gtk.DialogFlags.MODAL,
+                    message_type=Gtk.MessageType.INFO,
+                    buttons=Gtk.ButtonsType.OK,
+                    text=f"Pairing request sent to {name}"
+                )
+                dialog.format_secondary_text(
+                    f"Verification key:\n{verification_key}\n\n"
+                    f"Please verify that this matches the key shown on your phone."
+                )
+                dialog.run()
+                dialog.destroy()
+                self._toast(f"Pairing request sent to {name}")
+            else:
+                self._toast("Failed to initiate pairing")
 
     def _action_remove(self):
         path, info = self._get_selected()
@@ -1527,17 +1628,25 @@ class MConnectApp(Gtk.Application):
         dl_label.set_xalign(0)
         general.pack_start(dl_label, False, False, 0)
 
-        dl_path = os.path.expanduser("~/Downloads/xconnect")
-        dl_info = Gtk.Label(label=f"Received files: {dl_path}")
+        self.current_dl_path = self.dbus.get_downloads_directory()
+        dl_info = Gtk.Label(label=f"Received files: {self.current_dl_path}")
         dl_info.set_xalign(0)
         dl_info.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
         general.pack_start(dl_info, False, False, 0)
 
-        open_dl_btn = Gtk.Button.new_with_label("Open Downloads Folder")
+        dl_buttons_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        
+        change_dl_btn = Gtk.Button.new_with_label("Change Folder...")
+        change_dl_btn.connect("clicked", lambda w: self._choose_downloads_dir(dl_info))
+        dl_buttons_box.pack_start(change_dl_btn, True, True, 0)
+
+        open_dl_btn = Gtk.Button.new_with_label("Open Folder")
         open_dl_btn.connect("clicked",
                             lambda w: subprocess.Popen(
-                                ["xdg-open", dl_path]))
-        general.pack_start(open_dl_btn, False, False, 0)
+                                ["xdg-open", self.current_dl_path]))
+        dl_buttons_box.pack_start(open_dl_btn, True, True, 0)
+        
+        general.pack_start(dl_buttons_box, False, False, 0)
 
         # Icon style section
         general.pack_start(Gtk.Separator(), False, False, 0)
@@ -1630,7 +1739,7 @@ class MConnectApp(Gtk.Application):
             '<span size="x-large" weight="bold">xconnect</span>')
         about.pack_start(about_title, False, False, 0)
 
-        about_ver = Gtk.Label(label="Version 2.0")
+        about_ver = Gtk.Label(label="Version 2.0.1")
         about.pack_start(about_ver, False, False, 0)
 
         about_desc = Gtk.Label(
@@ -1736,6 +1845,38 @@ class MConnectApp(Gtk.Application):
             subprocess.Popen(["xdg-open", path])
         except Exception:
             pass
+
+    def _choose_downloads_dir(self, label_widget):
+        """Open a folder-chooser dialog; save chosen path via D-Bus and update UI."""
+        dialog = Gtk.FileChooserDialog(
+            title="Choose Folder for Received Files",
+            parent=self.window,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN,   Gtk.ResponseType.OK,
+        )
+
+        # Pre-select the currently configured folder
+        current = getattr(self, 'current_dl_path', None)
+        if current and os.path.isdir(current):
+            dialog.set_current_folder(current)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            selected = dialog.get_filename()
+            dialog.destroy()
+            if selected:
+                try:
+                    self.dbus.set_downloads_directory(selected)
+                    self.current_dl_path = selected
+                    label_widget.set_text(f"Received files: {selected}")
+                    self._toast("Downloads folder updated")
+                except Exception as e:
+                    self._toast(f"Failed to set folder: {e}")
+        else:
+            dialog.destroy()
 
     def _add_custom_device(self):
         addr = self.custom_addr_entry.get_text().strip()

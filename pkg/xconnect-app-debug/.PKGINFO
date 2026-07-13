@@ -3,12 +3,12 @@
 pkgname = xconnect-app-debug
 pkgbase = xconnect-app
 xdata = pkgtype=debug
-pkgver = 2.0-29
+pkgver = 2.0.1-1
 pkgdesc = Detached debugging symbols for xconnect-app
 url = https://github.com/Twilight0/xconnect
-builddate = 1783286825
+builddate = 1783953482
 packager = Unknown Packager
-size = 2868992
+size = 2987000
 arch = x86_64
 license = GPL2
 makedepend = vala

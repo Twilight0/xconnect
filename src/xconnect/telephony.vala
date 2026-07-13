@@ -22,6 +22,8 @@ class TelephonyHandler : Object, PacketHandlerInterface {
     public const string TELEPHONY = "kdeconnect.telephony";
     public const string SMS_REQUEST = "kdeconnect.sms.request";
 
+    public signal void call_received (Device dev, string summary, string info);
+
     public string get_pkt_type () {
         return TELEPHONY;
     }
@@ -86,6 +88,9 @@ class TelephonyHandler : Object, PacketHandlerInterface {
             } else {
                 info = "%s %s".printf (time.format ("%X"), number);
             }
+            // Emit call_received signal so proxy/DBus can notify GUI
+            call_received (dev, summary, info);
+
             var notif = new Notify.Notification (summary, info, "phone");
 
             if (pkt.body.has_member("phoneThumbnail")) {

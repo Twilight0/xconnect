@@ -333,6 +333,17 @@ public class Config : Object {
         }
     }
 
+    public string get_downloads_dir () {
+        try {
+            if (_kf.has_group ("main") && _kf.has_key ("main", "downloads_dir")) {
+                return _kf.get_string ("main", "downloads_dir");
+            }
+        } catch (Error e) {}
+        return "";
+    }
 
-
+    public void set_downloads_dir (string dir) {
+        _kf.set_string ("main", "downloads_dir", dir);
+        save ();
+    }
 }

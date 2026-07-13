@@ -41,6 +41,15 @@ class DeviceManager : GLib.Object {
         this.custom_devices = new ArrayList<string>();
     }
 
+    public bool has_active_devices () {
+        foreach (var dev in this.devices.values) {
+            if (dev.is_active) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Obtain path to devices cache file
      */
@@ -193,27 +202,8 @@ class DeviceManager : GLib.Object {
 
         var dev = this.devices.@get (unique);
 
-        // Connection conflict resolution:
-        // - If the device is active AND already paired, keep the existing connection.
-        //   Our UDP broadcasts fire every 5s and cause the phone to reconnect even
-        //   when we have a perfectly good session. Accepting would just break it.
-        // - If the device is active but NOT yet paired (stale/incomplete session),
-        //   replace it so pairing can complete.
-        var core = Core.instance ();
-        string our_uuid = core.config.get_uuid ();
-        string peer_uuid = discovered_dev.device_id;
-        message ("conflict check: dev.is_active=%s, dev.is_paired=%s, our_uuid=%s, peer_uuid=%s",
-                 dev.is_active.to_string (), dev.is_paired.to_string (), our_uuid, peer_uuid);
-
-        if (dev.is_active && dev.is_paired) {
-            message ("device already active and paired, ignoring redundant incoming connection");
-            channel.close ();
-            return;
-        }
-
-        if (dev.is_active && !dev.is_paired) {
-            message ("device active but not paired (stale session), replacing connection");
-            dev.deactivate ();
+        if (dev.is_active) {
+            message ("device already active, updating channel to recover from stale session");
         }
 
         if (is_new) {
@@ -334,6 +324,10 @@ class DeviceManager : GLib.Object {
 
     private void device_disconnected (Device dev) {
         debug ("device %s got disconnected", dev.to_string ());
+
+        // Persist the current paired state before unhooking the signal,
+        // so that paired=true survives across daemon restarts.
+        update_cache ();
 
         dev.paired.disconnect (this.device_paired);
         dev.disconnected.disconnect (this.device_disconnected);

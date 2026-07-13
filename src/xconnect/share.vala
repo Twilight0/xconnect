@@ -20,7 +20,6 @@ class ShareHandler : Object, PacketHandlerInterface {
 
     public const string SHARE = "kdeconnect.share.request";
     public const string SHARE_PKT = "kdeconnect.share";
-    private static string DOWNLOADS = null;
 
     public signal void file_received (Device dev, string path);
     public signal void url_received (Device dev, string url);
@@ -34,30 +33,29 @@ class ShareHandler : Object, PacketHandlerInterface {
     private ShareHandler () {
     }
 
-    public static ShareHandler instance () {
-        if (ShareHandler.DOWNLOADS == null) {
-
-            var downloaddir = Environment.get_user_special_dir (UserDirectory.DOWNLOAD);
-            if (downloaddir == null) {
-                downloaddir = Path.build_filename(Environment.get_home_dir(), "Downloads");
-            }
-            ShareHandler.DOWNLOADS = Path.build_filename (
-                downloaddir,
-                "xconnect");
-
-            if (DirUtils.create_with_parents (ShareHandler.DOWNLOADS,
-                                              0700) == -1) {
-                warning ("failed to create downloads directory: %s %s",
-                         Posix.strerror (Posix.errno), ShareHandler.DOWNLOADS);
-            }
+    private static string get_downloads_dir () {
+        var core = Core.instance ();
+        string custom_dir = core.config.get_downloads_dir ();
+        if (custom_dir != null && custom_dir != "") {
+            DirUtils.create_with_parents (custom_dir, 0700);
+            return custom_dir;
         }
 
-        info ("downloads will be saved to %s", ShareHandler.DOWNLOADS);
+        var downloaddir = Environment.get_user_special_dir (UserDirectory.DOWNLOAD);
+        if (downloaddir == null) {
+            downloaddir = Path.build_filename(Environment.get_home_dir(), "Downloads");
+        }
+        var default_dir = Path.build_filename (downloaddir, "xconnect");
+        DirUtils.create_with_parents (default_dir, 0700);
+        return default_dir;
+    }
+
+    public static ShareHandler instance () {
         return new ShareHandler ();
     }
 
     private static string make_downloads_path (string name) {
-        return Path.build_filename (ShareHandler.DOWNLOADS, name);
+        return Path.build_filename (get_downloads_dir (), name);
     }
 
     public string get_pkt_type () {
@@ -177,12 +175,44 @@ class ShareHandler : Object, PacketHandlerInterface {
         var text = pkt.body.get_string_member ("text");
         debug ("shared text '%s'", text);
         text_received (dev, text);
-        var display = Gdk.Display.get_default ();
-        if (display != null) {
-            var cb = Gtk.Clipboard.get_default (display);
-            cb.set_text (text, -1);
-            Utils.show_own_notification ("Text copied to clipboard",
-                                         dev.device_name);
+        set_clipboard_text (text, dev.device_name);
+    }
+
+    /**
+     * set_clipboard_text:
+     * Write @text to the X11 clipboard using xclip so the content persists
+     * even after the daemon's GTK main loop yields (GTK clipboard is
+     * process-owned and would be lost immediately otherwise).
+     */
+    private static void set_clipboard_text (string text, string device_name) {
+        try {
+            string[] argv = { "xclip", "-selection", "clipboard", "-in" };
+            int stdin_fd;
+            Pid child_pid;
+            Process.spawn_async_with_pipes (
+                null, argv, null,
+                SpawnFlags.SEARCH_PATH | SpawnFlags.DO_NOT_REAP_CHILD,
+                null,
+                out child_pid, out stdin_fd, null, null);
+
+            var chan = new IOChannel.unix_new (stdin_fd);
+            chan.write_chars (text.to_utf8 (), null);
+            chan.shutdown (true);
+
+            ChildWatch.add (child_pid, (pid, status) => {
+                Process.close_pid (pid);
+            });
+
+            Utils.show_own_notification ("Text copied to clipboard", device_name);
+        } catch (Error e) {
+            warning ("failed to copy text to clipboard via xclip: %s", e.message);
+            // Fallback: GTK clipboard (may not persist)
+            var display = Gdk.Display.get_default ();
+            if (display != null) {
+                var cb = Gtk.Clipboard.get_default (display);
+                cb.set_text (text, -1);
+                Utils.show_own_notification ("Text copied to clipboard", device_name);
+            }
         }
     }
 

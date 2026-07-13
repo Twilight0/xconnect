@@ -117,11 +117,15 @@ class Packet : GLib.Object {
         return null;
     }
 
-    public static Packet new_pair (bool pair = true) {
+    public static Packet new_pair (bool pair = true, int64 timestamp = 0) {
         var builder = new Json.Builder ();
         builder.begin_object ();
         builder.set_member_name ("pair");
         builder.add_boolean_value (pair);
+        if (pair) {
+            builder.set_member_name ("timestamp");
+            builder.add_int_value (timestamp != 0 ? timestamp : (get_real_time () / 1000000));
+        }
         builder.end_object ();
 
         var data_obj = builder.get_root ().get_object ();

@@ -38,6 +38,12 @@ MANAGER_IFACE = """
     </method>
     <property type="as" name="CustomDevices" access="read"/>
     <property type="s" name="Certificate" access="read"/>
+    <method name="GetDownloadsDirectory">
+      <arg type="s" name="result" direction="out"/>
+    </method>
+    <method name="SetDownloadsDirectory">
+      <arg type="s" name="directory" direction="in"/>
+    </method>
     <signal name="DeviceAdded">
       <arg type="s" name="path"/>
     </signal>
@@ -64,8 +70,19 @@ DEVICE_IFACE = """
     <property type="b" name="Allowed" access="read"/>
     <property type="b" name="IsActive" access="read"/>
     <property type="b" name="IsConnected" access="read"/>
+    <property type="s" name="Certificate" access="read"/>
+    <property type="s" name="CertificateFingerprint" access="read"/>
     <property type="as" name="IncomingCapabilities" access="read"/>
     <property type="as" name="OutgoingCapabilities" access="read"/>
+    <method name="Pair"/>
+    <method name="AcceptPair"/>
+    <method name="RejectPair"/>
+    <method name="GetVerificationKey">
+      <arg type="s" name="key" direction="out"/>
+    </method>
+    <signal name="PairRequested">
+      <arg type="s" name="fingerprint"/>
+    </signal>
   </interface>
 </node>
 """
@@ -125,6 +142,10 @@ TELEPHONY_IFACE = """
       <arg type="s" name="number" direction="in"/>
       <arg type="s" name="message" direction="in"/>
     </method>
+    <signal name="CallReceived">
+      <arg type="s" name="summary"/>
+      <arg type="s" name="info"/>
+    </signal>
   </interface>
 </node>
 """
@@ -334,9 +355,14 @@ class MConnectDBus:
                     BUS_NAME, path, "org.xconnect.Device.FindMyPhone"
                 )
             if "kdeconnect.telephony" in cap_list:
-                self._device_proxies[path]["telephony"] = self._new_proxy(
+                tele_proxy = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.Telephony"
                 )
+                self._device_proxies[path]["telephony"] = tele_proxy
+                try:
+                    tele_proxy.connect("g-signal", self._on_telephony_signal)
+                except Exception as e:
+                    print(f"Failed to connect telephony signal: {e}")
             if "kdeconnect.connectivity_report" in cap_list:
                 self._device_proxies[path]["connectivity"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.ConnectivityReport"
@@ -368,6 +394,8 @@ class MConnectDBus:
             # Monitor device property changes (battery, connectivity, etc.)
             dev_proxy.connect("g-properties-changed",
                               self._on_device_properties_changed)
+            # Subscribe to device signals (e.g. PairRequested)
+            dev_proxy.connect("g-signal", self._on_device_signal)
 
         except Exception as e:
             print(f"Failed to add device {path}: {e}")
@@ -403,14 +431,50 @@ class MConnectDBus:
         if not path:
             return
 
-        if signal_name == "notification_received":
+        if signal_name in ["notification_received", "NotificationReceived"]:
             nid, app, title, icon_path = parameters.unpack()
             if hasattr(self, '_notification_received_callback'):
                 self._notification_received_callback(path, nid, app, title, icon_path)
-        elif signal_name == "notification_cancelled":
+        elif signal_name in ["notification_cancelled", "NotificationCancelled"]:
             nid = parameters.unpack()[0]
             if hasattr(self, '_notification_cancelled_callback'):
                 self._notification_cancelled_callback(path, nid)
+
+    def _on_device_signal(self, proxy, sender, signal_name, parameters):
+        """Handle signals from a device (e.g. PairRequested)."""
+        path = None
+        for p, px in self._devices.items():
+            if px is proxy:
+                path = p
+                break
+        if not path:
+            return
+
+        if signal_name in ["pair_requested", "PairRequested"]:
+            fingerprint = parameters.unpack()[0]
+            if hasattr(self, '_pair_requested_callback'):
+                self._pair_requested_callback(path, fingerprint)
+
+    def _on_telephony_signal(self, proxy, sender, signal_name, parameters):
+        """Handle telephony signals from a device (e.g. CallReceived)."""
+        path = None
+        for p, px in self._device_proxies.items():
+            if px.get("telephony") is proxy:
+                path = p
+                break
+        if not path:
+            return
+
+        if signal_name in ["call_received", "CallReceived"]:
+            summary, info = parameters.unpack()
+            if hasattr(self, '_call_received_callback'):
+                self._call_received_callback(path, summary, info)
+
+    def set_pair_requested_callback(self, callback):
+        self._pair_requested_callback = callback
+
+    def set_call_received_callback(self, callback):
+        self._call_received_callback = callback
 
     def set_notification_received_callback(self, callback):
         """Set callback for phone notifications: callback(path, id, app, title, icon_path)."""
@@ -447,6 +511,7 @@ class MConnectDBus:
         """Return list of (path, device_info) tuples."""
         result = []
         for path, proxy in self._devices.items():
+            fp = self._get_prop(proxy, "CertificateFingerprint")
             info = {
                 "path": path,
                 "id": self._get_prop(proxy, "Id"),
@@ -456,6 +521,7 @@ class MConnectDBus:
                 "allowed": self._get_prop(proxy, "Allowed"),
                 "active": self._get_prop(proxy, "IsActive"),
                 "connected": self._get_prop(proxy, "IsConnected"),
+                "fingerprint": fp,
             }
             result.append((path, info))
         return result
@@ -480,6 +546,32 @@ class MConnectDBus:
         if proxy:
             return self._get_prop(proxy, "IsActive") or self._get_prop(proxy, "IsConnected")
         return False
+
+    def get_local_uuid(self):
+        """Get local device UUID from manager."""
+        try:
+            if self._manager:
+                return self._get_prop(self._manager, "Uuid")
+        except Exception as e:
+            print(f"Failed to get local UUID: {e}")
+        return ""
+
+    def get_verification_key(self, path):
+        """Get the pairing verification key for a device.
+
+        Computed live by the daemon (matches KDE Connect's algorithm: SHA256
+        of both devices' public keys plus the pairing timestamp), so it
+        should match what the phone displays during pairing. This is a
+        method call (not a cached property) since the value depends on the
+        current pairing timestamp and must be fetched fresh each time.
+        """
+        try:
+            device_proxy = self._devices.get(path)
+            if device_proxy:
+                return device_proxy.GetVerificationKey() or ""
+        except Exception as e:
+            print(f"Failed to get verification key: {e}")
+        return ""
 
     def allow_device(self, path):
         """Allow/pair with a device."""
@@ -506,6 +598,23 @@ class MConnectDBus:
             return True
         except Exception as e:
             print(f"Failed to remove device: {e}")
+            return False
+
+    def get_downloads_directory(self):
+        """Get the current downloads directory from the daemon."""
+        try:
+            return self._manager.GetDownloadsDirectory()
+        except Exception as e:
+            print(f"Failed to get downloads directory: {e}")
+            return os.path.expanduser("~/Downloads/xconnect")
+
+    def set_downloads_directory(self, directory):
+        """Set the downloads directory in the daemon config."""
+        try:
+            self._manager.SetDownloadsDirectory("(s)", directory)
+            return True
+        except Exception as e:
+            print(f"Failed to set downloads directory: {e}")
             return False
 
     def get_battery(self, path):
@@ -612,6 +721,39 @@ class MConnectDBus:
                 return True
             except Exception as e:
                 print(f"Failed to report lock state: {e}")
+        return False
+
+    def accept_pair(self, path):
+        """Accept pairing request from phone."""
+        proxy = self._devices.get(path)
+        if proxy:
+            try:
+                proxy.AcceptPair()
+                return True
+            except Exception as e:
+                print(f"Failed to accept pair: {e}")
+        return False
+
+    def reject_pair(self, path):
+        """Reject pairing request from phone."""
+        proxy = self._devices.get(path)
+        if proxy:
+            try:
+                proxy.RejectPair()
+                return True
+            except Exception as e:
+                print(f"Failed to reject pair: {e}")
+        return False
+
+    def pair(self, path):
+        """Initiate pairing request."""
+        proxy = self._devices.get(path)
+        if proxy:
+            try:
+                proxy.Pair()
+                return True
+            except Exception as e:
+                print(f"Failed to initiate pair: {e}")
         return False
 
     def set_device_added_callback(self, callback):

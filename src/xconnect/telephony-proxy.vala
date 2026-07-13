@@ -22,10 +22,19 @@ class TelephonyHandlerProxy : Object, PacketHandlerInterfaceProxy {
     private Device device = null;
     private TelephonyHandler telephony = null;
 
+    public signal void call_received (string summary, string info);
+
     public TelephonyHandlerProxy.for_device_handler (Device dev,
                                                      PacketHandlerInterface iface) {
         this.device = dev;
         this.telephony = (TelephonyHandler) iface;
+        this.telephony.call_received.connect (this.on_call_received);
+    }
+
+    private void on_call_received (Device dev, string summary, string info) {
+        if (this.device != dev)
+            return;
+        call_received (summary, info);
     }
 
     [DBus (visible = false)]

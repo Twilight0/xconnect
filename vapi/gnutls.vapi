@@ -1422,6 +1422,24 @@ namespace GnuTLS
 		}
 	}
 
+	[Compact]
+	[CCode (cname = "struct gnutls_pubkey_st", cprefix = "gnutls_pubkey_",
+	        free_function = "gnutls_pubkey_deinit", cheader_filename = "gnutls/abstract.h")]
+	public class Pubkey {
+		private static int init (out Pubkey key);
+		public static Pubkey create ()
+		{
+			Pubkey result;
+			var ret = init (out result);
+			if (ret != 0)
+				GLib.error ("%s", ((ErrorCode)ret).to_string ());
+			return result;
+		}
+
+		public int import_x509 (X509.Certificate crt, uint flags = 0);
+
+		public int export2 (X509.CertificateFormat format, out Datum out_data);
+	}
 
 	[CCode (cname = "gnutls_certificate_client_retrieve_function *", has_target = false)]
 	public delegate int ClientCertificateRetrieveFunction (Session session, Datum[] req_ca_rdn, PKAlgorithm[] pk_algos, out RetrStruct st);

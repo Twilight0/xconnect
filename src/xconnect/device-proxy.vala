@@ -107,6 +107,8 @@ class DeviceDBusProxy : Object {
         }
     }
 
+    public signal void pair_requested (string fingerprint);
+
     private HashMap<string, PacketHandlerInterfaceProxy> handlers;
 
     private uint register_id = 0;
@@ -133,6 +135,9 @@ class DeviceDBusProxy : Object {
         });
         this.device.disconnected.connect (() => {
             this.is_connected = false;
+        });
+        this.device.pair_requested.connect ((f) => {
+            this.pair_requested (f);
         });
         this.notify.connect (this.update_properties);
     }
@@ -243,6 +248,27 @@ class DeviceDBusProxy : Object {
      */
     public void pair () throws Error {
         this.device.pair.begin (true);
+    }
+
+    public void accept_pair () throws Error {
+        this.device.accept_pair.begin ();
+    }
+
+    public void reject_pair () throws Error {
+        this.device.reject_pair.begin ();
+    }
+
+    /**
+     * get_verification_key:
+     *
+     * Returns the pairing verification key, computed live (not cached),
+     * since its value depends on the current pairing timestamp and would
+     * be stale if exposed as a plain D-Bus property (GDBusProxy caches
+     * property values client-side and only updates them via
+     * PropertiesChanged signals, which we don't emit for this).
+     */
+    public string get_verification_key () throws Error {
+        return this.device.verification_key;
     }
 
     [DBus (visible = false)]
