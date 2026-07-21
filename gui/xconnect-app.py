@@ -28,7 +28,7 @@ from dbus_client import MConnectDBus
 
 APP_ID = "org.xconnect.gui"
 APP_NAME = "xconnect"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 SETTINGS_DIR = os.path.expanduser("~/.config/xconnect")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "gui.conf")
 ICON_DIR = "/usr/share/xconnect/gui/icons"
@@ -1765,7 +1765,7 @@ class MConnectApp(Gtk.Application):
             '<span size="x-large" weight="bold">xconnect</span>')
         about.pack_start(about_title, False, False, 0)
 
-        about_ver = Gtk.Label(label="Version 2.0.1")
+        about_ver = Gtk.Label(label=f"Version {APP_VERSION}")
         about.pack_start(about_ver, False, False, 0)
 
         about_desc = Gtk.Label(

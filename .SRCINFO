@@ -1,0 +1,26 @@
+pkgbase = xconnect
+	pkgdesc = KDE Connect protocol implementation in Vala/C with GTK3/XApp GUI
+	pkgver = 2.1.0
+	pkgrel = 1
+	url = https://github.com/Twilight0/xconnect
+	arch = x86_64
+	license = GPL2
+	makedepends = vala
+	makedepends = meson
+	makedepends = ninja
+	makedepends = pkg-config
+	depends = glib2
+	depends = json-glib
+	depends = libgee
+	depends = libnotify
+	depends = gtk3
+	depends = libxtst
+	depends = at-spi2-core
+	depends = gnutls
+	depends = python
+	depends = python-gobject
+	depends = xapp
+	provides = xconnectctl
+	provides = xconnect-app
+
+pkgname = xconnect
