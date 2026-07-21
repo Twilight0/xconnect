@@ -23,6 +23,7 @@ namespace Xconnect {
         public const string OBJECT_PATH = "/org/xconnect/manager";
 
         public abstract ObjectPath[] ListDevices () throws Error;
+        public abstract void Refresh () throws Error;
         public abstract void AllowDevice (string path) throws Error;
         public abstract void DisallowDevice (string path) throws Error;
         public abstract void RemoveDevice (string path) throws Error;

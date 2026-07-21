@@ -30,6 +30,7 @@ MANAGER_IFACE = """
     <method name="ListDevices">
       <arg type="ao" name="result" direction="out"/>
     </method>
+    <method name="Refresh"/>
     <method name="AddCustomDevice">
       <arg type="s" name="address" direction="in"/>
     </method>
@@ -202,12 +203,23 @@ class MConnectDBus:
         self._device_proxies = {}  # path -> {iface_name: proxy}
         self._connected = False
 
-    def _new_proxy(self, name, path, interface):
+        self._manager_info = Gio.DBusNodeInfo.new_for_xml(MANAGER_IFACE).interfaces[0]
+        self._device_info = Gio.DBusNodeInfo.new_for_xml(DEVICE_IFACE).interfaces[0]
+        self._battery_info = Gio.DBusNodeInfo.new_for_xml(BATTERY_IFACE).interfaces[0]
+        self._ping_info = Gio.DBusNodeInfo.new_for_xml(PING_IFACE).interfaces[0]
+        self._share_info = Gio.DBusNodeInfo.new_for_xml(SHARE_IFACE).interfaces[0]
+        self._findmyphone_info = Gio.DBusNodeInfo.new_for_xml(FINDMYPHONE_IFACE).interfaces[0]
+        self._telephony_info = Gio.DBusNodeInfo.new_for_xml(TELEPHONY_IFACE).interfaces[0]
+        self._connectivity_info = Gio.DBusNodeInfo.new_for_xml(CONNECTIVITY_IFACE).interfaces[0]
+        self._lockdevice_info = Gio.DBusNodeInfo.new_for_xml(LOCKDEVICE_IFACE).interfaces[0]
+        self._systemvolume_info = Gio.DBusNodeInfo.new_for_xml(SYSTEMVOLUME_IFACE).interfaces[0]
+
+    def _new_proxy(self, name, path, interface, info=None):
         if self._conn:
             return Gio.DBusProxy.new_sync(
                 self._conn,
                 Gio.DBusProxyFlags.NONE,
-                None,
+                info,
                 name,
                 path,
                 interface,
@@ -217,46 +229,22 @@ class MConnectDBus:
             return Gio.DBusProxy.new_for_bus_sync(
                 Gio.BusType.SESSION,
                 Gio.DBusProxyFlags.NONE,
-                None,
+                info,
                 name,
                 path,
                 interface,
                 None
             )
 
-        self._manager_info = Gio.DBusNodeInfo.new_for_xml(MANAGER_IFACE)
-        self._device_info = Gio.DBusNodeInfo.new_for_xml(DEVICE_IFACE)
-        self._battery_info = Gio.DBusNodeInfo.new_for_xml(BATTERY_IFACE)
-        self._ping_info = Gio.DBusNodeInfo.new_for_xml(PING_IFACE)
-        self._share_info = Gio.DBusNodeInfo.new_for_xml(SHARE_IFACE)
-        self._findmyphone_info = Gio.DBusNodeInfo.new_for_xml(FINDMYPHONE_IFACE)
-        self._telephony_info = Gio.DBusNodeInfo.new_for_xml(TELEPHONY_IFACE)
-        self._connectivity_info = Gio.DBusNodeInfo.new_for_xml(CONNECTIVITY_IFACE)
-        self._lockdevice_info = Gio.DBusNodeInfo.new_for_xml(LOCKDEVICE_IFACE)
-        self._systemvolume_info = Gio.DBusNodeInfo.new_for_xml(SYSTEMVOLUME_IFACE)
-
     def connect(self):
         """Connect to the xconnect D-Bus service."""
         try:
-            self._conn = None
-            uid = os.getuid()
-            user_bus_address = f"unix:path=/run/user/{uid}/bus"
-            if os.path.exists(f"/run/user/{uid}/bus"):
-                try:
-                    self._conn = Gio.DBusConnection.new_for_address_sync(
-                        user_bus_address,
-                        Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
-                        None,
-                        None
-                    )
-                except Exception as e:
-                    print(f"Failed to connect to user bus at {user_bus_address}: {e}")
-                    self._conn = None
-
+            self._conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
             self._manager = self._new_proxy(
                 BUS_NAME,
                 MANAGER_PATH,
-                "org.xconnect.DeviceManager"
+                "org.xconnect.DeviceManager",
+                self._manager_info
             )
             self._connected = True
 
@@ -324,7 +312,8 @@ class MConnectDBus:
             dev_proxy = self._new_proxy(
                 BUS_NAME,
                 path,
-                "org.xconnect.Device"
+                "org.xconnect.Device",
+                self._device_info
             )
             self._devices[path] = dev_proxy
 
@@ -345,7 +334,7 @@ class MConnectDBus:
                 self._device_proxies[path]["ping"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.Ping"
                 )
-            if "kdeconnect.share" in cap_list:
+            if "kdeconnect.share" in cap_list or "kdeconnect.share.request" in cap_list:
                 self._device_proxies[path]["share"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.Share"
                 )
@@ -354,7 +343,7 @@ class MConnectDBus:
                 self._device_proxies[path]["findmyphone"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.FindMyPhone"
                 )
-            if "kdeconnect.telephony" in cap_list:
+            if "kdeconnect.telephony" in cap_list or "kdeconnect.telephony.request" in cap_list:
                 tele_proxy = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.Telephony"
                 )
@@ -371,11 +360,11 @@ class MConnectDBus:
                 self._device_proxies[path]["lockdevice"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.LockDevice"
                 )
-            if "kdeconnect.systemvolume" in cap_list:
+            if "kdeconnect.systemvolume" in cap_list or "kdeconnect.systemvolume.request" in cap_list:
                 self._device_proxies[path]["systemvolume"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.SystemVolume"
                 )
-            if "kdeconnect.mpris" in cap_list:
+            if "kdeconnect.mpris" in cap_list or "kdeconnect.mpris.request" in cap_list:
                 self._device_proxies[path]["mpris"] = self._new_proxy(
                     BUS_NAME, path, "org.xconnect.Device.Mpris"
                 )
@@ -512,6 +501,8 @@ class MConnectDBus:
         result = []
         for path, proxy in self._devices.items():
             fp = self._get_prop(proxy, "CertificateFingerprint")
+            out_caps = proxy.get_cached_property("OutgoingCapabilities")
+            in_caps = proxy.get_cached_property("IncomingCapabilities")
             info = {
                 "path": path,
                 "id": self._get_prop(proxy, "Id"),
@@ -522,6 +513,8 @@ class MConnectDBus:
                 "active": self._get_prop(proxy, "IsActive"),
                 "connected": self._get_prop(proxy, "IsConnected"),
                 "fingerprint": fp,
+                "outgoing_capabilities": out_caps.unpack() if out_caps else [],
+                "incoming_capabilities": in_caps.unpack() if in_caps else [],
             }
             result.append((path, info))
         return result
@@ -662,7 +655,8 @@ class MConnectDBus:
         proxy = self._device_proxies.get(path, {}).get("share")
         if proxy:
             try:
-                proxy.ShareFile(file_path)
+                proxy.call_sync('ShareFile', GLib.Variant('(s)', (file_path,)),
+                                Gio.DBusCallFlags.NONE, -1, None)
                 return True
             except Exception as e:
                 print(f"Failed to share file: {e}")
@@ -673,7 +667,8 @@ class MConnectDBus:
         proxy = self._device_proxies.get(path, {}).get("share")
         if proxy:
             try:
-                proxy.ShareUrl(url)
+                proxy.call_sync('ShareUrl', GLib.Variant('(s)', (url,)),
+                                Gio.DBusCallFlags.NONE, -1, None)
                 return True
             except Exception as e:
                 print(f"Failed to share URL: {e}")
@@ -684,7 +679,8 @@ class MConnectDBus:
         proxy = self._device_proxies.get(path, {}).get("share")
         if proxy:
             try:
-                proxy.ShareText(text)
+                proxy.call_sync('ShareText', GLib.Variant('(s)', (text,)),
+                                Gio.DBusCallFlags.NONE, -1, None)
                 return True
             except Exception as e:
                 print(f"Failed to share text: {e}")
@@ -695,7 +691,8 @@ class MConnectDBus:
         proxy = self._device_proxies.get(path, {}).get("telephony")
         if proxy:
             try:
-                proxy.SendSms(number, message)
+                proxy.call_sync('SendSms', GLib.Variant('(ss)', (number, message)),
+                                Gio.DBusCallFlags.NONE, -1, None)
                 return True
             except Exception as e:
                 print(f"Failed to send SMS: {e}")
@@ -755,6 +752,15 @@ class MConnectDBus:
             except Exception as e:
                 print(f"Failed to initiate pair: {e}")
         return False
+
+    def refresh(self):
+        """Trigger UDP network discovery scan in daemon."""
+        try:
+            if self._manager:
+                self._manager.Refresh()
+                self._enumerate_devices()
+        except Exception as e:
+            print(f"Failed to refresh devices: {e}")
 
     def set_device_added_callback(self, callback):
         """Set callback for when a new device is added."""

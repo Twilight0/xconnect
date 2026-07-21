@@ -253,7 +253,7 @@ public class Config : Object {
      *
      * Add or update a device entry in the config file.
      */
-    public void add_device (string group_name, string name, string type, bool allowed) {
+    public void add_device (string group_name, string name, string type, bool allowed, bool paired = false) {
         try {
             // Get current device list
             string[] devices = {};
@@ -278,13 +278,36 @@ public class Config : Object {
             _kf.set_string (group_name, "name", name);
             _kf.set_string (group_name, "type", type);
             _kf.set_boolean (group_name, "allowed", allowed);
+            _kf.set_boolean (group_name, "paired", paired);
 
             // Write back to file
             save ();
-            info ("saved device %s to config", name);
+            info ("saved device %s (allowed=%s, paired=%s) to config", name, allowed.to_string (), paired.to_string ());
         } catch (Error e) {
             warning ("failed to save device to config: %s", e.message);
         }
+    }
+
+    public bool is_device_paired (string name, string type) {
+        try {
+            if (!_kf.has_group ("main") || !_kf.has_key ("main", "devices"))
+                return false;
+
+            string[] devices = _kf.get_string_list ("main", "devices");
+
+            foreach (string dev in devices) {
+                if (_kf.has_group (dev) == false)
+                    continue;
+
+                if (_kf.get_string (dev, "name") == name &&
+                    _kf.get_string (dev, "type") == type) {
+                    if (_kf.has_key (dev, "paired")) {
+                        return _kf.get_boolean (dev, "paired");
+                    }
+                }
+            }
+        } catch (KeyFileError ke) { }
+        return false;
     }
 
     /**

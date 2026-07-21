@@ -37,6 +37,10 @@ class Core : Object {
         get; set; default = null;
     }
 
+    public Discovery discovery {
+        get; set; default = null;
+    }
+
     private static Core _instance = null;
 
     private Core () {
@@ -105,6 +109,16 @@ class Core : Object {
         try {
             tls_cert = new TlsCertificate.from_files (cert_file.get_path (),
                                                       key_file.get_path ());
+            // Ensure config UUID always matches the certificate Common Name (CN)
+            string cert_pem;
+            FileUtils.get_contents (cert_file.get_path (), out cert_pem);
+            string cert_cn = Crypt.extract_common_name (cert_pem);
+            if (cert_cn.length > 0 && cert_cn != config.get_uuid ()) {
+                info ("synchronizing config UUID (%s) to certificate CN (%s)",
+                      config.get_uuid (), cert_cn);
+                config.set_uuid (cert_cn);
+                config.save ();
+            }
         } catch (Error e) {
             warning ("failed to load certificate or key: %s", e.message);
             throw e;
@@ -118,6 +132,19 @@ class Core : Object {
         var config = new Config (get_config_dir ());
 
         bool need_save = false;
+
+        string cert_path = Path.build_filename (get_storage_dir (), "certificate.pem");
+        if (FileUtils.test (cert_path, FileTest.EXISTS)) {
+            try {
+                string cert_pem;
+                FileUtils.get_contents (cert_path, out cert_pem);
+                string cert_cn = Crypt.extract_common_name (cert_pem);
+                if (cert_cn.length > 0 && cert_cn != config.get_uuid ()) {
+                    config.set_uuid (cert_cn);
+                    need_save = true;
+                }
+            } catch (Error e) { }
+        }
 
         if (config.get_uuid () == "") {
             config.set_uuid (GLib.Uuid.string_random ());

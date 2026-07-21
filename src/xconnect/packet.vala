@@ -22,7 +22,7 @@ public errordomain PacketError {
     MALFORMED
 }
 
-class Packet : GLib.Object {
+public class Packet : GLib.Object {
 
     /**
      * Payload:

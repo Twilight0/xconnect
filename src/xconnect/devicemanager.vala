@@ -17,7 +17,7 @@
  */
 using Gee;
 
-class DeviceManager : GLib.Object {
+public class DeviceManager : GLib.Object {
     public signal void found_new_device (Device dev);
     public signal void device_capability_added (Device dev,
                                                 string capability,
@@ -25,7 +25,7 @@ class DeviceManager : GLib.Object {
 
     public const string DEVICES_CACHE_FILE = "devices";
 
-    private HashMap<string, Device> devices;
+    public HashMap<string, Device> devices { get; private set; }
     private ArrayList<string> custom_devices;
 
     public string[] custom_device_list {
@@ -120,6 +120,10 @@ class DeviceManager : GLib.Object {
     }
 
     public void handle_discovered_device (DiscoveredDevice discovered_dev) {
+        if (discovered_dev.device_id == Core.instance ().config.get_uuid ()) {
+            debug ("ignoring discovered self-device: %s", discovered_dev.device_id);
+            return;
+        }
         message ("found device (discovered via UDP): %s", discovered_dev.to_string ());
 
         var new_dev = new Device.from_discovered_device (discovered_dev);
@@ -128,6 +132,15 @@ class DeviceManager : GLib.Object {
     }
 
     public void handle_new_device (Device new_dev, bool from_cache = false) {
+        var core = Core.instance ();
+        if (core != null) {
+            string self_uuid = core.config.get_uuid ();
+            string self_name = core.config.get_name ();
+            if (new_dev.device_id == self_uuid || new_dev.device_name == self_name) {
+                debug ("ignoring self-device %s (%s)", new_dev.device_name, new_dev.device_id);
+                return;
+            }
+        }
         var is_new = false;
         string unique = new_dev.to_unique_string ();
         vdebug ("device key: %s", unique);
@@ -166,6 +179,11 @@ class DeviceManager : GLib.Object {
             dev.allowed = true;
         }
 
+        if (!dev.is_paired && core.config.is_device_paired (dev.device_name, dev.device_type)) {
+            message ("restoring paired status for device %s via config", dev.device_name);
+            dev.is_paired = true;
+        }
+
         // auto-allow new devices that haven't been explicitly blocked in config
         if (!from_cache && !dev.allowed && is_new && !device_known_in_config (dev)) {
             message ("auto-allowing new device %s", dev.to_string ());
@@ -187,6 +205,11 @@ class DeviceManager : GLib.Object {
     }
 
     public void handle_incoming_device_connection (DiscoveredDevice discovered_dev, DeviceChannel channel) {
+        if (discovered_dev.device_id == Core.instance ().config.get_uuid ()) {
+            debug ("ignoring incoming connection from self-device: %s", discovered_dev.device_id);
+            channel.close ();
+            return;
+        }
         var new_dev = new Device.from_discovered_device (discovered_dev);
         var is_new = false;
         string unique = new_dev.to_unique_string ();
@@ -288,6 +311,10 @@ class DeviceManager : GLib.Object {
     private void device_paired (Device dev, bool status) {
         info ("device %s pair status change: %s",
               dev.to_string (), status.to_string ());
+
+        if (status == true) {
+            save_device_to_config (dev);
+        }
 
         update_cache ();
 
@@ -470,6 +497,14 @@ class DeviceManager : GLib.Object {
         var core = Core.instance ();
         string group_name = dev.device_name.replace (" ", "-").down ();
         core.config.add_device (group_name, dev.device_name,
-                                 dev.device_type, true);
+                                 dev.device_type, dev.allowed, dev.is_paired);
+    }
+
+    public void refresh () {
+        message ("triggering UDP discovery scan");
+        var core = Core.instance ();
+        if (core != null && core.discovery != null) {
+            core.discovery.refresh ();
+        }
     }
 }

@@ -18,7 +18,7 @@
 using Gee;
 
 [DBus (name = "org.xconnect.DeviceManager")]
-class DeviceManagerDBusProxy : Object {
+public class DeviceManagerDBusProxy : Object {
     private DeviceManager manager;
 
     public string certificate {
@@ -61,8 +61,22 @@ class DeviceManagerDBusProxy : Object {
         this.bus = bus;
         this.devices = new HashMap<string, DeviceDBusProxy>();
 
+        // Register D-Bus proxies for any devices already present in manager
+        foreach (var dev in manager.devices.values) {
+            this.add_device (dev);
+        }
+
         manager.found_new_device.connect ((d) => {
-            this.add_device (d);
+            bool already_registered = false;
+            foreach (var proxy in this.devices.values) {
+                if (proxy.device == d) {
+                    already_registered = true;
+                    break;
+                }
+            }
+            if (!already_registered) {
+                this.add_device (d);
+            }
         });
         manager.device_capability_added.connect (this.add_device_capability);
     }
@@ -150,15 +164,13 @@ class DeviceManagerDBusProxy : Object {
 
         message ("LIST_DEVICES called, %u devices in map", (uint) this.devices.size);
         foreach (var entry in this.devices.entries) {
-            var dev_proxy = entry.value;
-            if (dev_proxy.device.allowed) {
-                message ("  DEVICE PATH: %s (allowed)", entry.key);
-                devices += new ObjectPath (entry.key);
-            } else {
-                message ("  DEVICE PATH: %s (not allowed, skipping)", entry.key);
-            }
+            devices += new ObjectPath (entry.key);
         }
         return devices;
+    }
+
+    public void refresh () throws Error {
+        this.manager.refresh ();
     }
 
     /**

@@ -60,13 +60,14 @@ ninja -C build
 DESTDIR=/tmp/xconnect ninja -C build install
 ```
 
-## Components
-
 | Binary | Description |
 |--------|-------------|
 | `xconnect` | Daemon — handles protocol, discovery, device communication |
-| `xconnectctl` | CLI client — list devices, share files, send SMS |
+| `xconnectctl` | CLI client — list devices, share files, send SMS, pair devices |
 | `xconnect-app` | GUI — system tray icon with device management window |
+
+For a complete guide to all commands, options, and feature alignment between CLI and GUI, see [FEATURES.md](file:///home/twilight/Projects/xconnect/FEATURES.md).
+For developer and AI agent workflow guidelines, command order, and build instructions, see [AGENTS.md](file:///home/twilight/Projects/xconnect/AGENTS.md).
 
 ## Daemon
 

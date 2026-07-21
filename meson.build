@@ -166,6 +166,19 @@ install_data('extra/xconnect.service',
              install_dir: systemd_user_dir,
              install_mode: 'rw-r--r--')
 
+# dbus session service auto-activation
+dbus_service_dir = join_paths(get_option('datadir'), 'dbus-1', 'services')
+install_data('extra/org.xconnect.service',
+             install_dir: dbus_service_dir,
+             install_mode: 'rw-r--r--')
+
+# man pages
+mandir = join_paths(get_option('mandir'), 'man1')
+install_data('extra/xconnect.1',
+             'extra/xconnectctl.1',
+             install_dir: mandir,
+             install_mode: 'rw-r--r--')
+
 # other targets
 
 gdb_conf = configuration_data()

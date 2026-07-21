@@ -25,8 +25,7 @@ makedepends=(
     'ninja'
     'pkg-config'
 )
-provides=('xconnect' 'xconnectctl')
-conflicts=('xconnect' 'xconnect-git')
+provides=('xconnectctl' 'xconnect-app')
 
 build() {
     cd "$startdir"

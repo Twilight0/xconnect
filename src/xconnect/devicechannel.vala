@@ -23,7 +23,7 @@ using Xconn;
  *
  * Automatically handle channel encoding.
  */
-class DeviceChannel : Object {
+public class DeviceChannel : Object {
 
     public signal void disconnected ();
     public signal void packet_received (Packet pkt);
@@ -38,6 +38,10 @@ class DeviceChannel : Object {
     private bool _is_server = false;
 
     public TlsCertificate peer_certificate = null;
+
+    public InetSocketAddress remote_address {
+        get { return this._isa; }
+    }
 
     public DeviceChannel (InetAddress host, uint port) {
         this._isa = new InetSocketAddress (host, (uint16) port);
@@ -167,9 +171,9 @@ class DeviceChannel : Object {
         try {
             var mode = this._is_server ? Utils.TlsConnectionMode.CLIENT : Utils.TlsConnectionMode.SERVER;
             tls_conn = Utils.make_tls_connection (this._sock_conn,
-                                                  cert,
-                                                  expected_peer,
-                                                  mode);
+                                                   cert,
+                                                   expected_peer,
+                                                   mode);
             info ("attempt TLS handshake");
             var res = yield tls_conn.handshake_async ();
 
@@ -243,16 +247,17 @@ class DeviceChannel : Object {
         string to_send = pkt.to_string () + "\n";
         debug ("send data: %s", to_send);
 
-	if (this._dout != null) {
-	        try {
-	            this._dout.put_string (to_send);
-	        } catch (IOError e) {
-	            warning ("failed to send message: %s", e.message);
-	            // TODO disconnect?
-	        }
-	} else {
-            warning ("not connected to: %s", this._isa.address.to_string ());
-	}
+        if (this._dout != null) {
+            try {
+                this._dout.put_string (to_send);
+                this._dout.flush ();
+            } catch (Error e) {
+                warning ("failed to send message: %s", e.message);
+                // TODO disconnect?
+            }
+        } else {
+            warning ("not connected to: %s", (this._isa != null && this._isa.address != null) ? this._isa.address.to_string () : "unknown");
+        }
     }
 
     public async void send_identity_plain_text (Packet pkt) throws Error {

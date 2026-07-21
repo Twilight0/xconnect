@@ -56,5 +56,9 @@ namespace Xconnect {
         public abstract string certificate {
             owned get;
         }
+        public abstract void Pair () throws Error;
+        public abstract void AcceptPair () throws Error;
+        public abstract void RejectPair () throws Error;
+        public abstract string GetVerificationKey () throws Error;
     }
 }

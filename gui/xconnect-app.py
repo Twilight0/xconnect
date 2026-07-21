@@ -331,8 +331,6 @@ class MConnectApp(Gtk.Application):
         """Handle notification received from phone."""
         name = self.store.devices.get(path, {}).get("name", "Phone")
         self.notif_log.add(app, title, f"[{name}]")
-        GLib.idle_add(self._show_notification, f"{app}: {title}",
-                      f"From {name}", "phone")
 
     def _on_pair_requested(self, path, fingerprint):
         """Handle incoming pairing request signal."""
@@ -373,7 +371,6 @@ class MConnectApp(Gtk.Application):
         """Handle call received signal from phone."""
         name = self.store.devices.get(path, {}).get("name", "Phone")
         self.notif_log.add(summary, info, f"[{name}]")
-        GLib.idle_add(self._show_notification, summary, f"{info} (From {name})", "phone")
 
     def _on_property_changed(self, path, props):
         """Handle D-Bus property changes on a device."""
@@ -947,18 +944,47 @@ class MConnectApp(Gtk.Application):
         # Connectivity
         net_type = info.get("net_type")
         strength = info.get("net_strength")
-        if net_type:
-            self.conn_card._value_label.set_markup(
-                f'<span size="large" weight="bold">{net_type} {strength}%</span>')
+        if is_active:
+            if net_type and strength is not None:
+                self.conn_card._value_label.set_markup(
+                    f'<span size="large" weight="bold">{net_type} {strength}%</span>')
+            elif net_type:
+                self.conn_card._value_label.set_markup(
+                    f'<span size="large" weight="bold">{net_type}</span>')
+            else:
+                self.conn_card._value_label.set_markup(
+                    '<span size="large" color="#9e9e9e">Unknown</span>')
         else:
             self.conn_card._value_label.set_markup(
                 '<span size="large" color="#9e9e9e">N/A</span>')
 
         # Update action buttons sensitivity, icons, and labels dynamically
         if hasattr(self, "action_buttons"):
+            in_caps = info.get("incoming_capabilities", [])
+            cap_map = {
+                "ping": "kdeconnect.ping",
+                "find": "kdeconnect.findmyphone.request",
+                "send_file": "kdeconnect.share.request",
+                "send_url": "kdeconnect.share.request",
+                "send_text": "kdeconnect.share.request",
+                "send_sms": "kdeconnect.sms.request",
+                "lock": "kdeconnect.lock.request",
+            }
             for key, btn in self.action_buttons.items():
                 if key in ["ping", "find", "send_file", "send_url", "send_text", "send_sms", "lock"]:
-                    btn.set_sensitive(is_active and is_paired)
+                    cap = cap_map.get(key)
+                    supported = False
+                    if cap:
+                        base_cap = cap.replace(".request", "")
+                        supported = (cap in in_caps) or (base_cap in in_caps)
+                    if not in_caps:
+                        supported = True
+                    
+                    btn.set_sensitive(is_active and is_paired and supported)
+                    if not supported:
+                        btn.set_tooltip_text("This capability is disabled or not supported by the device.")
+                    else:
+                        btn.set_tooltip_text(None)
                 elif key == "pair_unpair":
                     if is_paired:
                         btn.set_label("Unpair")

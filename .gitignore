@@ -31,3 +31,8 @@
 *~
 
 build
+pkg/
+srcdir/
+*.pkg.tar.zst
+__pycache__/
+application

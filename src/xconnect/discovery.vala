@@ -81,13 +81,17 @@ class Discovery : GLib.Object {
         });
     }
 
+    public void refresh () {
+        broadcast_identity ();
+    }
+
     /**
      * broadcast_identity:
      *
      * Broadcast our identity packet to UDP port 1716 where KDE Connect
      * phones listen for new devices.
      */
-    private void broadcast_identity () {
+    public void broadcast_identity () {
         if (this.socket == null)
             return;
 

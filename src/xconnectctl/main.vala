@@ -45,7 +45,7 @@ namespace Xconnect {
          * command line 'command' wrapper
          */
         private struct Command {
-            string command; // textual command, ex. list, show, etc.
+            unowned string command; // textual command, ex. list, show, etc.
             int arg_count; // number of required parameters, not including command
             unowned CommandFunc clbk; // callback
 
@@ -62,26 +62,34 @@ namespace Xconnect {
             Intl.setlocale(LocaleCategory.ALL, "");
             try {
                 var opt_context = new OptionContext ();
-                opt_context.set_description (
-                    """Available commands:
-  list-devices         List devices
-  allow-device <path>  Allow device
-  remove-device <path> Remove device completely from config
-  show-device <path>   Show device details
-  show-battery <path>   Show device battery & charging
+                opt_context.set_summary (
+"""xconnectctl - Command line interface for xconnect
 
-  find-device <path> Find the device
+Usage:
+  xconnectctl [OPTIONS] <command> [args...]
 
-  share-url <path> <url>   Share URL with device
-  share-text <path> <text>  Share text with device
-  share-file <path> <file>  Share file with device
+Available commands:
+  list-devices                 List all discovered and paired devices
+  show-device <path>           Show detailed info & capabilities of a device
+  show-battery <path>          Show battery level and charging status
+  allow-device <path>          Allow device connections
+  remove-device <path>         Remove device completely from configuration
 
-  send-sms <number> <message>  Send SMS
+  pair-device <path>           Initiate pairing request to device (displays verification key)
+  accept-pair <path>           Accept an incoming pairing request
+  reject-pair <path>           Reject an incoming pairing request
 
-  start-daemon         Start xconnect daemon via systemd
-  stop-daemon          Stop xconnect daemon via systemd
+  find-device <path>           Ring phone (Find My Phone)
+  share-url <path> <url>       Open URL on device web browser
+  share-text <path> <text>     Send text snippet to device
+  share-file <path> <filepath> Transfer file to device
+  send-sms <path> <num> <msg>  Send SMS message via phone
+
+  start-daemon                 Start xconnect systemd user service
+  stop-daemon                  Stop xconnect systemd user service
+  help                         Show this help message
 """
-                    );
+                );
                 opt_context.set_help_enabled (true);
                 opt_context.add_main_entries (options, null);
                 opt_context.parse (ref args);
@@ -119,20 +127,33 @@ namespace Xconnect {
                     return 1;
                 }
             }
-
             Command[] commands = {
                 Command ("list-devices", 0, cl.cmd_list_devices),
+                Command ("list", 0, cl.cmd_list_devices),
+                Command ("refresh", 0, cl.cmd_refresh),
                 Command ("allow-device", 1, cl.cmd_allow_device),
+                Command ("allow", 1, cl.cmd_allow_device),
                 Command ("remove-device", 1, cl.cmd_remove_device),
+                Command ("remove", 1, cl.cmd_remove_device),
+                Command ("pair-device", 1, cl.cmd_pair_device),
+                Command ("pair", 1, cl.cmd_pair_device),
+                Command ("accept-pair", 1, cl.cmd_accept_pair),
+                Command ("accept", 1, cl.cmd_accept_pair),
+                Command ("reject-pair", 1, cl.cmd_reject_pair),
+                Command ("reject", 1, cl.cmd_reject_pair),
                 Command ("find-device", 1, cl.cmd_find_device),
+                Command ("find", 1, cl.cmd_find_device),
                 Command ("show-device", 1, cl.cmd_show_device),
+                Command ("show", 1, cl.cmd_show_device),
                 Command ("show-battery", 1, cl.cmd_show_battery),
+                Command ("battery", 1, cl.cmd_show_battery),
                 Command ("share-url", 2, cl.cmd_share_url),
                 Command ("share-text", 2, cl.cmd_share_text),
                 Command ("share-file", 2, cl.cmd_share_file),
                 Command ("send-sms", 3, cl.cmd_send_sms),
                 Command ("start-daemon", 0, cl.cmd_start_daemon),
                 Command ("stop-daemon", 0, cl.cmd_stop_daemon),
+                Command ("help", 0, cl.cmd_help),
             };
             handle_command (remaining, commands);
 
@@ -189,12 +210,24 @@ namespace Xconnect {
                              (path) => {
                     try {
                         var dp = get_device (path);
-                        return "%s - %s".printf (dp.id, dp.name);
+                        var status = dp.is_paired ? "Paired" : "Unpaired (Available for pairing)";
+                        var active = dp.is_active ? "Connected" : "Offline";
+                        return "%s [%s] (%s, %s) - Address: %s".printf (
+                            dp.name, dp.device_type, status, active, dp.address);
                     } catch (IOError e) {
                         warning ("error occurred: %s", e.message);
                         return "(error)";
                     }
                 });
+                return 0;
+            });
+        }
+
+        private int cmd_refresh (string[] args) {
+            return checked_dbus_call (() => {
+                var manager = get_manager ();
+                manager.Refresh ();
+                stdout.printf ("Triggered network discovery scan\n");
                 return 0;
             });
         }
@@ -218,6 +251,77 @@ namespace Xconnect {
                 stdout.printf ("Device removed\n");
                 return 0;
             });
+        }
+
+        private int cmd_pair_device (string[] args) {
+            return checked_dbus_call (() => {
+                var dp = args[0];
+                var device = get_device (new ObjectPath (dp));
+                device.Pair ();
+                try {
+                    var vkey = device.GetVerificationKey ();
+                    if (vkey != null && vkey.length > 0) {
+                        stdout.printf ("Pairing request sent to %s (Verification key: %s)\n", dp, vkey);
+                    } else {
+                        stdout.printf ("Pairing request sent to %s\n", dp);
+                    }
+                } catch (Error e) {
+                    stdout.printf ("Pairing request sent to %s\n", dp);
+                }
+                return 0;
+            });
+        }
+
+        private int cmd_accept_pair (string[] args) {
+            return checked_dbus_call (() => {
+                var dp = args[0];
+                var device = get_device (new ObjectPath (dp));
+                device.AcceptPair ();
+                stdout.printf ("Accepted pairing request for %s\n", dp);
+                return 0;
+            });
+        }
+
+        private int cmd_reject_pair (string[] args) {
+            return checked_dbus_call (() => {
+                var dp = args[0];
+                var device = get_device (new ObjectPath (dp));
+                device.RejectPair ();
+                stdout.printf ("Rejected pairing request for %s\n", dp);
+                return 0;
+            });
+        }
+
+        private int cmd_help (string[] args) {
+            stdout.puts ("xconnectctl - Command line interface for xconnect\n\n");
+            stdout.puts ("Usage:\n");
+            stdout.puts ("  xconnectctl [OPTIONS] <command> [args...]\n\n");
+            stdout.puts ("Device Commands:\n");
+            stdout.puts ("  list-devices                 List all discovered and paired devices\n");
+            stdout.puts ("  show-device <path>           Show detailed info & capabilities of a device\n");
+            stdout.puts ("  show-battery <path>          Show battery level and charging status\n");
+            stdout.puts ("  allow-device <path>          Allow device connections\n");
+            stdout.puts ("  remove-device <path>         Remove device completely from configuration\n\n");
+            stdout.puts ("Pairing Commands:\n");
+            stdout.puts ("  pair-device <path>           Initiate pairing request to device (displays verification key)\n");
+            stdout.puts ("  accept-pair <path>           Accept an incoming pairing request\n");
+            stdout.puts ("  reject-pair <path>           Reject an incoming pairing request\n\n");
+            stdout.puts ("Action & Share Commands:\n");
+            stdout.puts ("  find-device <path>           Ring phone (Find My Phone)\n");
+            stdout.puts ("  share-url <path> <url>       Open URL on device web browser\n");
+            stdout.puts ("  share-text <path> <text>     Send text snippet to device\n");
+            stdout.puts ("  share-file <path> <filepath> Transfer file to device\n");
+            stdout.puts ("  send-sms <path> <num> <msg>  Send SMS message via phone\n\n");
+            stdout.puts ("Service Commands:\n");
+            stdout.puts ("  start-daemon                 Start xconnect systemd user service\n");
+            stdout.puts ("  stop-daemon                  Stop xconnect systemd user service\n");
+            stdout.puts ("  help                         Show this help message\n\n");
+            stdout.puts ("Options:\n");
+            stdout.puts ("  -d, --debug                  Show debug output\n");
+            stdout.puts ("  -v, --verbose                Be verbose\n");
+            stdout.puts ("  -h, --help                   Show command help\n");
+            stdout.flush ();
+            return 0;
         }
 
         private int cmd_share_url (string[] args) {

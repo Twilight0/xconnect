@@ -209,6 +209,23 @@ namespace Xconn {
         }
 
         /**
+         * extract_common_name:
+         * Extract the Common Name (CN) / UUID from a PEM certificate.
+         * @param certificate_pem PEM encoded certificate
+         * @return common name string
+         */
+        public string extract_common_name (string certificate_pem) {
+            var cert = cert_from_pem (certificate_pem);
+            size_t sz = 256;
+            uint8[] buf = new uint8[sz];
+            var err = cert.get_dn_by_oid (GnuTLS.OID.X520_COMMON_NAME, 0, 0, buf, ref sz);
+            if (err == GnuTLS.ErrorCode.SUCCESS) {
+                return (string) buf;
+            }
+            return "";
+        }
+
+        /**
          * extract_public_key_der:
          *
          * Extract the DER-encoded SubjectPublicKeyInfo from a PEM certificate.

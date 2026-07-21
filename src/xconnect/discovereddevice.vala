@@ -19,7 +19,7 @@
 /**
  * Newly discovered device wrapper.
  */
-class DiscoveredDevice : Object {
+public class DiscoveredDevice : Object {
 
     public string device_id {
         get; private set; default = "";

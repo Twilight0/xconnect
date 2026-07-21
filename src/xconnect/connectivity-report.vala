@@ -31,6 +31,16 @@ class ConnectivityReportHandler : Object, PacketHandlerInterface {
     public void use_device (Device dev) {
         debug ("use device %s for connectivity report", dev.to_string ());
         dev.message.connect (this.message);
+        request_report (dev);
+    }
+
+    public void request_report (Device dev) {
+        var builder = new Json.Builder ();
+        builder.begin_object ();
+        builder.end_object ();
+        var pkt = new Packet ("kdeconnect.connectivity_report.request",
+                              builder.get_root ().get_object ());
+        dev.send (pkt);
     }
 
     public void release_device (Device dev) {

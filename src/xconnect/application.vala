@@ -61,8 +61,7 @@ namespace Xconn {
                 log_debug = true;
             }
 
-            if (log_debug == true)
-                Environment.set_variable ("G_MESSAGES_DEBUG", "all", false);
+            Environment.set_variable ("G_MESSAGES_DEBUG", "all", false);
 
             core = Core.instance ();
             if (core == null)
@@ -84,6 +83,7 @@ namespace Xconn {
             }
 
             core.transfer_manager = this.transfer;
+            core.discovery = this.discovery;
 
             if (core.config.is_debug_on () == true)
                 Environment.set_variable ("G_MESSAGES_DEBUG", "all", false);

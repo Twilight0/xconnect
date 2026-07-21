@@ -1,4 +1,4 @@
 [D-BUS Service]
 Name=org.xconnect
-Exec=/usr/bin/xconnect --gapplication-service
+Exec=/usr/bin/xconnect
 SystemdService=xconnect.service

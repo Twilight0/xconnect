@@ -92,6 +92,18 @@ class TelephonyHandler : Object, PacketHandlerInterface {
             call_received (dev, summary, info);
 
             var notif = new Notify.Notification (summary, info, "phone");
+            if (ev == "ringing") {
+                notif.set_urgency (Notify.Urgency.CRITICAL);
+                notif.add_action ("mute", "Mute Ringtone", (n, action) => {
+                    debug ("Mute clicked in notification, sending mute request");
+                    this.send_mute (dev);
+                    try {
+                        n.close ();
+                    } catch (Error err) {
+                        warning ("failed to close notification: %s", err.message);
+                    }
+                });
+            }
 
             if (pkt.body.has_member("phoneThumbnail")) {
                 var data = GLib.Base64.decode(pkt.body.get_string_member("phoneThumbnail"));
@@ -139,5 +151,19 @@ class TelephonyHandler : Object, PacketHandlerInterface {
      */
     public void send_sms (Device dev, string number, string message) {
         dev.send (make_sms_packet (number, message));
+    }
+
+    /**
+     * send_mute:
+     *
+     * Request the phone to mute the incoming call ringtone.
+     */
+    public void send_mute (Device dev) {
+        var builder = new Json.Builder ();
+        builder.begin_object ();
+        builder.end_object ();
+        var pkt = new Packet ("kdeconnect.telephony.request_mute",
+                              builder.get_root ().get_object ());
+        dev.send (pkt);
     }
 }

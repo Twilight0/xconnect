@@ -1,0 +1,69 @@
+.TH XCONNECTCTL 1 "July 2026" "2.0.1" "User Commands"
+.SH NAME
+xconnectctl \- Command-line control tool for xconnect KDE Connect daemon
+.SH SYNOPSIS
+.B xconnectctl
+[\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR...]
+.SH DESCRIPTION
+\fBxconnectctl\fR is the command-line utility for \fBxconnect\fR, a lightweight Vala/C implementation of the KDE Connect protocol. It allows managing device pairings, sending files, URLs, text, and SMS messages, and controlling systemd service execution directly from the shell.
+.SH COMMANDS
+.TP
+.B list-devices
+Lists all paired and discovered devices on the local network along with their status (Paired/Unpaired, Active/Offline) and IP address.
+.TP
+.B show-device \fIPATH\fR
+Displays detailed properties and advertised capabilities of the specified device object path (e.g. \fI/org/xconnect/device/0\fR).
+.TP
+.B show-battery \fIPATH\fR
+Displays battery level percentage and charging status for the specified device.
+.TP
+.B pair-device \fIPATH\fR
+Initiates a pairing request to the specified device and outputs the 8-character verification key for security matching.
+.TP
+.B accept-pair \fIPATH\fR
+Accepts an incoming pairing request from the specified device.
+.TP
+.B reject-pair \fIPATH\fR
+Rejects an incoming pairing request from the specified device.
+.TP
+.B allow-device \fIPATH\fR
+Grants permanent access permission to a device.
+.TP
+.B remove-device \fIPATH\fR
+Removes a device completely from the configuration cache.
+.TP
+.B find-device \fIPATH\fR
+Rings the remote phone at full volume to locate it.
+.TP
+.B share-url \fIPATH\fR \fIURL\fR
+Opens the given web URL in the remote device's default web browser.
+.TP
+.B share-text \fIPATH\fR \fITEXT\fR
+Sends a text snippet to the remote device.
+.TP
+.B share-file \fIPATH\fR \fIFILEPATH\fR
+Transfers a file to the remote device's downloads folder.
+.TP
+.B send-sms \fIPATH\fR \fINUMBER\fR \fIMESSAGE\fR
+Sends an SMS text message using the remote phone.
+.TP
+.B start-daemon
+Starts the \fBxconnect.service\fR user systemd service.
+.TP
+.B stop-daemon
+Stops the \fBxconnect.service\fR user systemd service.
+.TP
+.B help
+Displays command usage and available options.
+.SH OPTIONS
+.TP
+.B \-d, \-\-debug
+Enables debug logging output.
+.TP
+.B \-v, \-\-verbose
+Enables verbose output.
+.TP
+.B \-h, \-\-help
+Shows command-line option help.
+.SH SEE ALSO
+.BR xconnect (1)

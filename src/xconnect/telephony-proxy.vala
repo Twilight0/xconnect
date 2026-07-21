@@ -50,4 +50,8 @@ class TelephonyHandlerProxy : Object, PacketHandlerInterfaceProxy {
     public void send_sms (string number, string message) throws Error {
         this.telephony.send_sms (this.device, number, message);
     }
+
+    public void mute () throws Error {
+        this.telephony.send_mute (this.device);
+    }
 }

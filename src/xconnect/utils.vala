@@ -118,9 +118,10 @@ namespace Utils {
             tls_conn = tls_serv;
         } else {
             debug ("creating TLS client connection");
-            tls_conn = TlsClientConnection.@new (sock_conn,
-                                                 sock_conn.get_remote_address ());
-            tls_conn.set_certificate (self_cert);
+            var tls_cli = (TlsClientConnection) TlsClientConnection.@new (sock_conn, null);
+            tls_cli.validation_flags = 0;
+            tls_cli.set_certificate (self_cert);
+            tls_conn = tls_cli;
         }
         tls_conn.accept_certificate.connect ((peer_cert, errors) => {
             message ("accept certificate, flags: 0x%x", errors);

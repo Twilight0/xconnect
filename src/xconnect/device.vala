@@ -22,7 +22,7 @@ using Xconn;
 /**
  * General device wrapper.
  */
-class Device : Object {
+public class Device : Object {
 
     public const uint PAIR_TIMEOUT = 60;
 
@@ -67,13 +67,27 @@ class Device : Object {
         get; private set; default = null;
     }
     public bool is_paired {
-        get; private set; default = false;
+        get; set; default = false;
     }
     public bool allowed {
         get; set; default = false;
     }
+    private int64 _last_seen_timestamp = 0;
     public bool is_active {
-        get; private set; default = false;
+        get {
+            if (_channel != null && _channel.is_secure) {
+                return true;
+            }
+            if (_last_seen_timestamp != 0 && (GLib.get_real_time () - _last_seen_timestamp) < 30000000) {
+                return true;
+            }
+            return false;
+        }
+        private set {
+            if (value) {
+                _last_seen_timestamp = GLib.get_real_time ();
+            }
+        }
     }
 
     public ArrayList<string> outgoing_capabilities {
@@ -129,8 +143,11 @@ class Device : Object {
         }
     }
 
-    // set to true if pair request was sent
+    // set to true if pair request was sent and we are awaiting a response
     private bool _pair_in_progress = false;
+    // set to true when user requests pairing but channel isn't live yet;
+    // cleared as soon as the pair packet is actually sent
+    private bool _pair_pending_send = false;
     private uint _pair_timeout_source = 0;
     // timestamp shared by both peers for the current pairing exchange,
     // used as part of the verification_key computation (protocol >= 8)
@@ -313,6 +330,27 @@ class Device : Object {
     }
 
     /**
+     * initiate_pair:
+     *
+     * Mark that a PC-initiated pairing is in progress so that maybe_pair()
+     * will send the pair packet as soon as a live channel exists.
+     * Call this before activate() when the device is not yet connected.
+     */
+    public void initiate_pair () {
+        // Clear any stale timeout to avoid phantom pair_timeout() fires
+        // from a previous abandoned pairing attempt.
+        if (_pair_timeout_source != 0) {
+            Source.remove (_pair_timeout_source);
+            _pair_timeout_source = 0;
+        }
+        _pairing_timestamp = GLib.get_real_time () / 1000000;
+        // flag: send pair packet on the next live channel.
+        _pair_pending_send = true;
+        _pair_in_progress = true;
+        GLib.message ("initiate_pair: pending pair send for %s, timestamp=%s", this.device_name, _pairing_timestamp.to_string ());
+    }
+
+    /**
      * pair: sent pair request
      *
      * Internally changes pair requests state tracking.
@@ -320,18 +358,24 @@ class Device : Object {
      * @param expect_response se to true if expecting a response
      */
     public async void pair (bool expect_response = true) {
-        if (this.host != null) {
-            debug ("start pairing");
+        if (_channel != null) {
+            GLib.message ("pair(): start pairing for %s, timestamp=%" + int64.FORMAT, this.device_name, this._pairing_timestamp);
 
             if (expect_response == true) {
                 _pair_in_progress = true;
+                // Clear any stale timeout before setting a fresh one.
+                if (_pair_timeout_source != 0) {
+                    Source.remove (_pair_timeout_source);
+                    _pair_timeout_source = 0;
+                }
                 // pairing timeout
                 _pair_timeout_source = Timeout.add_seconds (PAIR_TIMEOUT,
                                                             this.pair_timeout);
-                // fresh pairing request: generate and remember the timestamp
-                // so verification_key() can be computed consistently on both
-                // ends (the peer will adopt this same timestamp value)
-                this._pairing_timestamp = GLib.get_real_time () / 1000000;
+                // Only update the timestamp if initiate_pair() didn't already set one.
+                // This preserves the agreed timestamp between PC and phone.
+                if (this._pairing_timestamp == 0) {
+                    this._pairing_timestamp = GLib.get_real_time () / 1000000;
+                }
             } else if (this._pairing_timestamp == 0) {
                 // sending a confirmation without ever having a timestamp
                 // (shouldn't normally happen) - fall back to current time
@@ -339,7 +383,14 @@ class Device : Object {
             }
             // send request, reusing the shared pairing timestamp so that
             // both peers agree on the same verification_key input
-            yield _channel.send (Packet.new_pair (true, this._pairing_timestamp));
+            try {
+                yield _channel.send (Packet.new_pair (true, this._pairing_timestamp));
+                GLib.message ("pair(): pair request packet sent to %s", this.device_name);
+            } catch (Error e) {
+                warning ("pair(): failed to send pair request packet: %s", e.message);
+            }
+        } else {
+            warning ("pair(): cannot send pair request, _channel is null");
         }
     }
 
@@ -349,7 +400,7 @@ class Device : Object {
      * Sends a pair=false packet to the remote device and updates local pair state.
      */
     public async void unpair () {
-        if (this.host != null && _channel != null) {
+        if (_channel != null) {
             debug ("sending unpair request");
             try {
                 yield _channel.send (Packet.new_pair (false));
@@ -369,9 +420,10 @@ class Device : Object {
     }
 
     private bool pair_timeout () {
-        warning ("pair request timeout");
+        debug ("pair request timeout");
 
         _pair_timeout_source = 0;
+        _pair_pending_send = false;
 
         // handle failed pairing
         handle_pair (false);
@@ -393,12 +445,28 @@ class Device : Object {
      */
     public void maybe_pair () {
         if (is_paired == false) {
-            // Not paired: wait for user or peer to initiate pairing.
-            debug ("device is not paired, waiting for user or peer to initiate pairing");
+            if (_pair_pending_send || _pair_in_progress) {
+                if (_channel != null && _channel.is_secure) {
+                    // Clear the flag immediately so repeated calls don't resend
+                    _pair_pending_send = false;
+                    GLib.message ("maybe_pair: pair pending for %s, sending pair request on live channel", this.device_name);
+                    // Note: pair() will set _pair_in_progress = true when it sends
+                    this.pair.begin (true);
+                } else {
+                    GLib.message ("maybe_pair: pair pending for %s, waiting for secure channel...", this.device_name);
+                }
+            } else {
+                // Not paired: wait for user or peer to initiate pairing.
+                GLib.message ("maybe_pair: device %s is not paired, waiting for user or peer to initiate pairing", this.device_name);
+            }
         } else {
+            GLib.message ("maybe_pair: device %s is paired, connection active!", this.device_name);
+            if (_channel != null && _channel.is_secure) {
+                connected ();
+            }
             // Already paired: tell local subscribers (manager, D-Bus proxy, etc.)
             // without sending any packet to the remote device.
-            GLib.message ("device already paired, accepting incoming packets");
+            debug ("device already paired, accepting incoming packets");
             paired (true);
         }
     }
@@ -447,8 +515,13 @@ class Device : Object {
 
     public void activate_with_channel (DeviceChannel channel) {
         GLib.message ("activate_with_channel: setting up channel for device %s", this.device_name);
+        if (this.host == null && channel.remote_address != null) {
+            this.host = channel.remote_address.address;
+            this.tcp_port = channel.remote_address.port;
+        }
+
         if (this._channel != null) {
-            GLib.message ("activate_with_channel: closing existing channel first (preserving pairing state)");
+            GLib.message ("activate_with_channel: closing old channel first");
             this._channel.disconnected.disconnect (this.on_channel_disconnected);
             this._channel.packet_received.disconnect (this.on_channel_packet_received);
             this._channel.close ();
@@ -476,12 +549,16 @@ class Device : Object {
             var core = Core.instance ();
             string name = core.config.get_name ();
             string uuid = core.config.get_uuid ();
-            yield _channel.send (Packet.new_identity (name,
-                                                       uuid,
-                                                       core.handlers.interfaces,
-                                                       core.handlers.interfaces,
-                                                       "desktop",
-                                                       core.config.get_tcp_port ()));
+            try {
+                yield _channel.send (Packet.new_identity (name,
+                                                           uuid,
+                                                           core.handlers.interfaces,
+                                                           core.handlers.interfaces,
+                                                           "desktop",
+                                                           core.config.get_tcp_port ()));
+            } catch (Error e) {
+                warning ("secure_incoming: failed to send secure identity packet: %s", e.message);
+            }
 
             this.maybe_pair ();
         } else {
@@ -521,10 +598,12 @@ class Device : Object {
     }
 
     private void packet_received (Packet pkt) {
-        vdebug ("got packet");
         if (pkt.pkt_type == Packet.PAIR) {
-            // pairing
+            GLib.message ("packet_received: GOT PAIR PACKET from %s!", this.device_name);
             handle_pair_packet (pkt);
+        } else if (pkt.pkt_type == Packet.IDENTITY) {
+            // identity packet during connection handshake
+            vdebug ("got identity packet");
         } else {
             if (this.is_paired == false) {
                 warning ("not paired and got a packet of type %s, ignoring", pkt.pkt_type);
@@ -545,6 +624,8 @@ class Device : Object {
      */
     private void handle_pair_packet (Packet pkt) {
         assert (pkt.pkt_type == Packet.PAIR);
+
+        GLib.message ("handle_pair_packet: processing pair packet from %s", this.device_name);
 
         bool pair = pkt.body.get_boolean_member ("pair");
 
@@ -573,32 +654,32 @@ class Device : Object {
             this._pair_timeout_source = 0;
         }
 
-        debug ("pair in progress: %s is paired: %s pair: %s",
-               _pair_in_progress.to_string (), this.is_paired.to_string (),
-               pair.to_string ());
-        if (_pair_in_progress == true) {
+        GLib.message ("handle_pair: pair in progress: %s, pair pending: %s, is paired: %s, pair packet: %s",
+               _pair_in_progress.to_string (), _pair_pending_send.to_string (),
+               this.is_paired.to_string (), pair.to_string ());
+        if (_pair_in_progress == true || (pair == true && _pair_pending_send == true)) {
             // response to host initiated pairing
             if (pair == true) {
-                debug ("device is paired, pairing complete");
+                GLib.message ("device %s is paired, pairing complete!", this.device_name);
                 this.is_paired = true;
             } else {
-                warning ("pairing rejected by device");
+                warning ("pairing rejected by device %s", this.device_name);
                 this.is_paired = false;
             }
             // pair completed
             _pair_in_progress = false;
+            _pair_pending_send = false;
         } else {
-            debug ("unsolicited pair change from device, pair status: %s",
-                   pair.to_string ());
+            GLib.message ("unsolicited pair change from device %s, pair status: %s",
+                   this.device_name, pair.to_string ());
             if (pair == false) {
                 // unpair from device
                 this.is_paired = false;
             } else {
                 if (this.is_paired) {
-                    debug ("already paired, sending pair confirmation back");
-                    this.pair.begin (false);
+                    GLib.message ("already paired with %s, ignoring redundant pair packet", this.device_name);
                 } else {
-                    debug ("incoming unsolicited pairing request, emitting pair_requested signal");
+                    GLib.message ("incoming unsolicited pairing request from %s, emitting pair_requested signal", this.device_name);
                     pair_requested (this.verification_key);
                     return;
                 }
@@ -649,14 +730,6 @@ class Device : Object {
         }
 
         this.is_active = false;
-
-        // Cancel any pending pair timeout
-        if (_pair_timeout_source != 0) {
-            Source.remove (_pair_timeout_source);
-            _pair_timeout_source = 0;
-        }
-        // Reset pairing in-progress flag so next connection can pair
-        _pair_in_progress = false;
 
         // emit disconnected
         disconnected ();
@@ -767,14 +840,18 @@ class Device : Object {
         }
 
 
-        if (this.host != null && this.host.to_string () != other_dev.host.to_string ()) {
-            debug ("host address changed from %s to %s",
-                   this.host.to_string (), other_dev.host.to_string ());
-            // deactivate first
-            this.deactivate ();
+        if (this.host == null || (other_dev.host != null && this.host.to_string () != other_dev.host.to_string ())) {
+            if (this.host != null && other_dev.host != null) {
+                debug ("host address changed from %s to %s",
+                       this.host.to_string (), other_dev.host.to_string ());
+                // deactivate first
+                this.deactivate ();
+            }
 
-            host = other_dev.host;
-            tcp_port = other_dev.tcp_port;
+            if (other_dev.host != null) {
+                host = other_dev.host;
+                tcp_port = other_dev.tcp_port;
+            }
         }
     }
 

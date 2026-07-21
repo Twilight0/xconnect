@@ -22,7 +22,7 @@ using Gee;
  * General device wrapper.
  */
 [DBus (name = "org.xconnect.Device")]
-class DeviceDBusProxy : Object {
+public class DeviceDBusProxy : Object {
 
     public string id {
         get {
@@ -221,13 +221,13 @@ class DeviceDBusProxy : Object {
             this.update_address ();
             break;
         case "allowed":
-            this.allowed = device.allowed;
+            this.notify_property ("allowed");
             break;
         case "is-active":
-            this.is_active = device.is_active;
+            this.notify_property ("is-active");
             break;
         case "is-paired":
-            this.is_paired = device.is_paired;
+            this.notify_property ("is-paired");
             break;
         case "incoming-capabilities":
         case "outgoing-capabilities":
@@ -247,7 +247,16 @@ class DeviceDBusProxy : Object {
      * Send a pairing request to this device
      */
     public void pair () throws Error {
-        this.device.pair.begin (true);
+        GLib.message ("DeviceDBusProxy.pair() called for device %s", this.device.device_name);
+        this.device.allowed = true;
+        // initiate_pair sets _pair_pending_send = true and the shared timestamp.
+        this.device.initiate_pair ();
+        this.device.maybe_pair ();
+        if (!this.device.is_active) {
+            GLib.message ("pair(): device %s not active, initiating connection...",
+                          this.device.device_name);
+            this.device.activate ();
+        }
     }
 
     public void accept_pair () throws Error {
@@ -275,7 +284,7 @@ class DeviceDBusProxy : Object {
     public void bus_register (DBusConnection conn) {
         try {
             this.register_id = conn.register_object (this.object_path, this);
-            info ("device %s registered on D-Bus at %s (id=%u)",
+            GLib.message ("device %s registered on D-Bus at %s (id=%u)",
                   this.device.to_string (), this.object_path.to_string (),
                   this.register_id);
             this.prop_notifier = new DBusPropertyNotifier (conn,

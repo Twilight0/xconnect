@@ -16,7 +16,7 @@
  * Maciek Borzecki <maciek.borzecki (at] gmail.com>
  */
 
-interface PacketHandlerInterface : Object {
+public interface PacketHandlerInterface : Object {
 
     public abstract string get_pkt_type ();
 

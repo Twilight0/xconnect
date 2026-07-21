@@ -1,0 +1,17 @@
+.TH XCONNECT 1 "July 2026" "2.0.1" "User Commands"
+.SH NAME
+xconnect \- KDE Connect protocol daemon
+.SH SYNOPSIS
+.B xconnect
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+\fBxconnect\fR is a background daemon implementing the KDE Connect protocol in Vala and C. It handles TLS-encrypted device pairing, persistent clipboard synchronization, notification mirroring, incoming call notifications with ringer mute controls, and file/URL transfer capabilities over local Wi-Fi.
+.SH OPTIONS
+.TP
+.B \-d, \-\-debug
+Enables debug logging output.
+.TP
+.B \-v, \-\-verbose
+Enables verbose output.
+.SH SEE ALSO
+.BR xconnectctl (1)
